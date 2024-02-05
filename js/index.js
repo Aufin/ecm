@@ -1,58 +1,7 @@
-// Constructor =EcmSPA=
-
-
-function EcmSPA () {
-  this.router = new EcmRouter()
- return this;
-}
-
-// Initialize an element
-
-
-EcmSPA.prototype.initFunctions = {}
-EcmSPA.prototype.initElement = function(el) {
-    Object.values(this.initFunctions).forEach(init => {
-	init.call(this, el)
-    })
-    
-    $(el).data('ecm-instance', true)
-    return el
-}
-
-// Load an element
-
-
-EcmSPA.prototype.loadElement = function(name, use_cache = true){
-   return this.router.loadElement(name, use_cache).then(e => {
-    // some elements might replace themselves
-      const bdy = document.createElement('div');
-       bdy.append(e)
-	if (!$(e).data('ecm-instance')) {
-	    this.initElement(e)
-	}
-	return bdy.firstChild
-    })
-}
-
-// Replace an element
-
-
-EcmSPA.prototype.replaceElement = function(from, to, use_cache = true){
-   return this.loadElement(to, use_cache).then(e => {
-      from.replaceWith(e)
-      return e
-    })
-}
-
-EcmSPA.prototype.initFunctions.ecm_replace = function (el) {
-    const init = (e) => { this.replaceElement(e, $(e).data('ecm-replace'))};
-    if (el.hasAttribute('data-ecm-replace')) { init(el) }
-  
-    $(el).find('[data-ecm-replace]').each((_, e) => {  init (e) })
-    
-}
-
 // Pages, in single page? The router
+// :PROPERTIES:
+// :CUSTOM_ID: pages-in-single-page-the-router
+// :END:
 
 
 function EcmRouter() {
@@ -77,6 +26,148 @@ EcmRouter.prototype.loadElement = function(name, use_cache = true) {
 	     )
 }
 
+// Constructor =EcmSPA=
+// :PROPERTIES:
+// :CUSTOM_ID: constructor-ecmspa
+// :END:
+
+
+function EcmSPA () {
+    this.router = new EcmRouter()
+    this.locale = Intl.DateTimeFormat().resolvedOptions().locale;
+       return this;
+}
+
+// =.querySelector= mostly to find data attributes
+
+// This is because we want to modify/replace elements as they are loaded.
+
+
+EcmSPA.prototype.querySelectorAll = function(el, ... sels){
+   const selThis = el.matches(... sels), selC = el.querySelectorAll(... sels)
+
+  return [... selThis ? [el] : [], ... selC]
+}
+
+// Initialize an element
+// :PROPERTIES:
+// :CUSTOM_ID: initialize-an-element
+// :END:
+
+
+EcmSPA.prototype.initFunctions = {}
+EcmSPA.prototype.initElement = function(el) {
+    Object.values(this.initFunctions).forEach(init => {
+	init.call(this, el)
+    })
+    
+    $(el).data('ecm-instance', true)
+    return el
+}
+
+// Load an element
+// :PROPERTIES:
+// :CUSTOM_ID: load-an-element
+// :END:
+
+
+EcmSPA.prototype.loadElement = function(name, use_cache = true){
+   return this.router.loadElement(name, use_cache).then(e => {
+    // some elements might replace themselves
+      const bdy = document.createElement('div');
+       bdy.append(e)
+	if (!$(e).data('ecm-instance')) {
+	    this.initElement(e)
+	}
+	return bdy.firstChild
+    })
+}
+
+// =replaceElement= Replace an element
+// :PROPERTIES:
+// :CUSTOM_ID: replace-an-element
+// :END:
+
+
+EcmSPA.prototype.replaceElement = function(from, to, use_cache = true){
+   return this.loadElement(to, use_cache).then(e => {
+      from.replaceWith(e)
+      return e
+    })
+}
+
+EcmSPA.prototype.initFunctions.ecm_replace = function (el) {
+    const init = (e) => { this.replaceElement(e, $(e).data('ecm-replace'))};
+    this.querySelectorAll(el, '[data-ecm-replace]').forEach(init) 
+}
+
+// =.loadScript= Dynamic Loading of JavaScript files
+
+
+EcmSPA.prototype.loadScript = function (src) {
+    const el = document.createElement('script'),
+	  pro = new Promise((res) => {
+	      el.onload = _ => {
+		  el.remove()
+		  res(el)
+	      }
+	  })
+	  el.setAttribute('src', src)
+    
+    this.element = el;
+    document.body.append(el)
+    return pro
+}
+
+EcmSPA.prototype.domElements = {}
+
+EcmSPA.prototype.addDomElement = function (domEl, ecmEl) {
+    const map = this.domElements[ecmEl.constructor.name], cache =  map || new WeakMap()
+    cache.set(domEl, ecmEl)
+    if (!map)  this.domElements[ecmEl.constructor.name] = cache
+}
+    
+EcmSPA.prototype.getElement = function (domEl, type = false) {
+    if (type) {
+	return this.domElements[type].get(domEl)
+    } else {
+	let ret = undefined,
+	    arr = Object.values(this.domElements)
+	for (let i = 0; i < arr.length ; i++) {
+	    const el = arr[i].get(domEl)
+	    if (typeof el !== 'undefined') {
+		ret = el ; break
+	    }
+	}
+
+	if (typeof ret !== 'undefined') {
+	    return ret
+	} else {
+	    const p = domEl.parentNode
+	    if (p) {
+		return this.getElement(p)
+	    } else return ret
+	}
+    }
+
+}
+
+function EcmElement(el) {
+    this.addDomElement(el)
+    
+    return this
+};
+    
+Object.defineProperty(EcmElement.prototype, 'ECM', {
+  get() { return globalThis.ECM || EcmSPA.prototype }
+})
+
+    
+EcmElement.prototype.addDomElement = function (el) {
+    return this.ECM.addDomElement(el, this)
+}
+
+    
 function EcmAutoComplete (args, replace = false) {
     const self = this;
 
@@ -95,75 +186,157 @@ function EcmAutoComplete (args, replace = false) {
 	this.element = this.makeElementFromSelect(args)
         if  (replace) { args.replaceWith(this.element) }
         $(this.element).data('ecm-autocomplete', this);
+        this.init(this.element);
 	return this
     } ;
-
-    return this.elementPromise(args).then(element => {
-
-  	
-  	$(element).on("click",function(event){
-  	    const elq = $(element).find('.ecm-options').toggle();
-  	});
-
-  	$(element).find('.ecm-options').scroll(function () {
-            if ($(this)[0].scrollHeight - $(this).scrollTop() <=  $(this).outerHeight()) {
-  		alert("end of scroll");
-  		// You can perform as you want
-
-            }
-  	});
-
-  	$(element).find("input").each((n,e) => $(e).data("ecm-autocomplete", self))
-	self.target = element;
-
-	//  alert('asd')
-
-  	return element;
-    });
 };
 
+// * KeyDown
 
-EcmAutoComplete.prototype.element_cache = false;
-
-EcmAutoComplete.prototype.default_element_args = {
-    location: "/autocomplete.html",
-    refresh: false
-};
-
-EcmAutoComplete.prototype.elementPromise = function (args = {}) {
-    const Args = Object.assign({}, this.default_element_args, args),
-  	  loc = Args.location,
-  	  ref = Args.refresh
-
-    if (this.element_cache && !ref) {
-  	return new Promise((r) => r(this.element_cache))
-    } else {
-  	return fetch(loc)
-  	    .then(res => res.text()
-    		  .then(t => {
-  		      const edoc = new DOMParser().parseFromString(t, "text/html")
-  		      this.element_cache = edoc.body.firstChild
-                      return this.element_cache
-  		  }))
+EcmAutoComplete.prototype.onKeyDown = function (event) {
+    let lis = $(this.optionsUl).find('li'),
+	len = lis.length - 1, idx = -1, e = event
+   // event.stopPropagation();
+   console.log('keydown')
+    if (event.which === 40 || event.which === 38) {
+	$(lis).each((n, e) => {
+	    if(e.hasAttribute('data-ecm-selected')) {
+                console.log('idx', n)
+	 	e.removeAttribute('data-ecm-selected')
+                console.log('idx', n, e)
+	 	idx = n
+	    }
+	})
     }
+        
+    if (event.which === 40) {
+	// downarrow
+        if (idx !== len) {
+            idx++;  $(this.optionsUl).show()
+        }
+        const li = lis[idx]
+        li.setAttribute('data-ecm-selected', '')
+        li.scrollIntoView()
+    } else if (event.which === 38) {
+	// uparrow
+            if (idx > 0) {
+             idx--
+            } else { return }
+            const li = lis[idx]
+            li.setAttribute('data-ecm-selected', '')
+            li.scrollIntoView()
+	} else if (event.which === 13) {
+            console.log("Return!", $(lis).filter('[data-ecm-selected]'))
+	    $(lis).filter('[data-ecm-selected]').each((_, e) => {
+		this.selected = e
+	    })
+						      	    
+	}
+
+
 }
 
-var search_terms = ['apple', 'apple watch', 'apple macbook', 'apple macbook pro', 'iphone', 'iphone 12'];
+EcmAutoComplete.prototype.init = function (element) {
+    this.input = $(element).find('[data-ecm-select-text]').get(0)
+    this.display = $(element).find('[data-ecm-select-display').get(0)
 
-EcmAutoComplete.prototype.autocompleteMatch = function (input) {
+    $(this.display).on('click',  e => { console.log('clicked display');  e.stopPropagation(); e.preventDefault()})
+    $(this.display).find('a').first().on('click', _ => this.selected = false)
+    console.log('Got input', this.input)
+    
+    $(this.input).on("keyup", event => {
+      if (event.which === 40 || event.which === 38 || event.which === 13) { return }
+      console.log('Where are we now?',  this.showResults(this.input.value) )})
+    $(this.input).on("blur", event => { $(this.optionsUl).hide() })
+
+    $(this.optionsUl).on('mouseover', e => {
+       const hli = $(e.target).parents('li').get(0)
+
+      console.log('Monuseose==cver', $(e.target).parents('li'), e.target)
+	$(e.currentTarget).find('li').each((_, li) => {
+             if (hli == li) {
+		 li.setAttribute('data-ecm-selected', true)
+	     } else {
+		 li.removeAttribute('data-ecm-selected')
+	     }
+	})
+    });
+			    
+	    
+	    
+	
+    $(this.element).on('keydown', e => this.onKeyDown(e));
+    $(this.optionsUl).on('keydown', e => this.onKeyDown(e));
+    $(this.element).on("keydowna", e => {
+	let lis = $(this.optionsUl).find('li'),
+	      len = lis.length - 1, idx = -1
+	 if (event.which === 40 || event.which === 38) {
+	     $(lis).each((n, e) => {
+               console.log('n', n, ' e', e)
+	 	if(e.hasAttribute('data-ecm-selected')) {
+                    console.log('idx', n)
+	 	    e.removeAttribute('data-ecm-selected')
+                    console.log('idx', n, e)
+	 	    idx = n
+	 	}
+	     })
+	 }
+        
+	  if (event.which === 40) {
+	    // downarrow
+            if (idx !== len) {
+             idx++;  $(this.optionsUl).show()
+            }
+            const li = lis[idx]
+            li.setAttribute('data-ecm-selected', '')
+            li.scrollIntoView()
+	} else if (event.which === 38) {
+	    // uparrow
+            if (idx > 0) {
+             idx--
+            } else { return }
+            const li = lis[idx]
+            li.setAttribute('data-ecm-selected', '')
+            li.scrollIntoView()
+	} else if (event.which === 13) {
+            console.log("Return!", $(lis).filter('[data-ecm-selected]'))
+	    $(lis).filter('[data-ecm-selected]').each((_, e) => {
+		this.selected = e
+	    })
+						      	    
+	}
+ 
+    })
+
+	
+
+	
+	
+	
+	
+	      
+
+  $(element).on("click",function(event){
+  	   $(element).find('.ecm-options').toggle();
+  });
+
+}
+
+ EcmAutoComplete.prototype.autocompleteMatch = function (input) {
+   // console.log('Matching', input, this.options)
     if (input == '') {
 	return [];
     }
     var reg = new RegExp(input)
-    return search_terms.filter(function(term) {
-	if (term.match(reg)) {
-  	    return term;
+    return this.options.filter(function({val, text}) {
+	if (text.match(reg)) {
+  	    return {val, text};
 	}
     });
 }
 
 EcmAutoComplete.prototype.showResults = function (val) {
-    resq = $(this.target).find(".ecm-options")
+    resq = $(this.element).find(".ecm-options")
     res = resq[0]
     if (!this.firstHTML) { this.firstHTML = res.innerHTML }
     res.innerHTML = '';
@@ -171,59 +344,63 @@ EcmAutoComplete.prototype.showResults = function (val) {
     let list = '';
     let terms = this.autocompleteMatch(val);
     for (i=0; i<terms.length; i++) {
-	list += '<li><a href="javascript:;">' + terms[i] + '</a></li>';
+	list += '<li data-ecm-option="'+terms[i].value+'"><a href="javascript:;">' + terms[i].text + '</a></li>';
     }
-    list ? resq.show() : resq.hide();
-    res.innerHTML =  list || this.firstHTML;
+    resq.show()
+    res.innerHTML = list || (this.input.value == '' ? this.firstHTML : '');
 }
 
- EcmDateTime.prototype.elementHtml = `
- <div data-ecm-date-wrapper class="ecm-select uk-select">
-  <input type="hidden" data-ecm-select-name>
-  <form autocomplete="off">
-   <input class='uk-input' type="text" data-ecm-select-text>
-   <ul class="ecm-options" data-ecm-options></ul>
-  </form>
- </div>`;
 
-EcmAutoComplete.prototype.makeEmptyElement = function(html = false) {
- const edoc = new DOMParser().parseFromString(html || this.elementHtml, "text/html"),
-       child = edoc.body.firstChild
-    return child;
-}
-EcmSPA.prototype.initFunctions.ecm_auto_complete = (el) => {
-    function init (e) { return new EcmAutoComplete(e, true) };
-    if (el.hasAttribute('data-ecm-select')) { init(el) }
-  
-     
-    $(el).find('[data-ecm-select]').each((_, e) => {  init (e) })
-    
-}
+Object.defineProperty(EcmAutoComplete.prototype, 'selected', {
+    get() { return this.selectedElement },
+    set(v) {
+	 this.selectedElement = v;
+         const disp = v && v.firstChild && v.firstChild.firstChild
+		 ? v.firstChild.firstChild.cloneNode(true) : " " //v.firstChild.cloneNode(true) : false
+         console.log('settong', v, disp)
+        $(this.optionsUl).hide()
+	 if (!v) {
+	     $(this.display).css('z-index', '-42')
+		 .hide().contents().filter((n) =>  n > 0 ).remove()
+	     $(this.input).css('z-index', 'auto')
+	 } else {
+             
+	     $(this.input).css('z-index', '-42')
+	    // $(this.display).css('z-index', 'auto')
+	     $(this.display).show().css('z-index', 'auto').append(disp)
+	 }
+	 return v
+    }
+});
 EcmAutoComplete.prototype.selectToObject = (select) => {
   return {
 	name: select.name,
+        required: $(select).attr('required'),
 	options: [... select.options].map(o => {
-	    return {
+	    return obj = {
 		value: o.value,
-		text: o.text
+		text: o.text,
+		selected: o.selected
 	    }
 	})
   }
 };
- EcmAutoComplete.prototype.elementHtml = `
- <div data-ecm-select class="ecm-select uk-select">
-  <input type="hidden" data-ecm-select-name>
-  <form autocomplete="off">
-   <input class='uk-input' type="text" data-ecm-select-text>
-   <ul class="ecm-options" data-ecm-options></ul>
-  </form>
- </div>`;
 
-EcmAutoComplete.prototype.makeEmptyElement = function(html = false) {
- const edoc = new DOMParser().parseFromString(html || this.elementHtml, "text/html"),
-       child = edoc.body.firstChild
-    return child;
-}
+EcmAutoComplete.prototype.elementHtml = `
+   <div data-ecm-select-wrapper class="ecm-select uk-select">
+    <input type="hidden" data-ecm-select-out>
+    <form autocomplete="off">
+    <div data-ecm-select-display><a class="ecm-close" href="#"></a></div>
+     <input class='uk-input' type="text" data-ecm-select-text>
+     <ul class="ecm-options" data-ecm-options></ul>
+    </form>
+   </div>`;
+
+  EcmAutoComplete.prototype.makeEmptyElement = function(html = false) {
+   const edoc = new DOMParser().parseFromString(html || this.elementHtml, "text/html"),
+         child = edoc.body.firstChild
+      return child;
+  }
 EcmAutoComplete.prototype.optionsUl = false;
 EcmAutoComplete.prototype.addOptions = function (opts) {
     const ul = this.optionsUl 
@@ -237,6 +414,7 @@ EcmAutoComplete.prototype.addOptions = function (opts) {
 	      } else  { return '' }
 	  })()
 	    + '><a href="#">'+opts[i].text+'</a></li>'
+	if (opts[i].selected) this.selected = opts[i]
     }
 
     ul.innerHTML = ul.innerHTML + list
@@ -256,7 +434,8 @@ EcmAutoComplete.prototype.makeElement = function (name = '', opts = [], html = f
 	this.optionsUl = e
 	this.addOptions(opts)
     });
-    console.log('el', el)
+   this.options = opts
+   console.log('el', el, ' opts ', this.options)
 return el;
 };
 
@@ -265,14 +444,14 @@ EcmAutoComplete.prototype.makeElementFromSelect = function (sel, html = false) {
 
  return this.makeElement(name, options)
 }
-  EcmAutoComplete.prototype.elementCss = `
-      .ecm-select { width: unset; position:relative; z-index: 9}
+EcmAutoComplete.prototype.elementCss = `
+ .ecm-select { width: unset; position:relative; z-index: 1}
 
-     .ecm-select input {
-       background: unset;
-       height: 30px;
-       vertical-align: unset;
-     }
+  .ecm-select input {
+    background: unset;
+    height: 30px;
+     vertical-align: unset;
+ }
 
      .ecm-options{
        background-clip: padding-box;
@@ -285,9 +464,9 @@ EcmAutoComplete.prototype.makeElementFromSelect = function (sel, html = false) {
        list-style: outside none none;
        padding: 0 0 10px;
        position: absolute;
-       z-index: 8; 
+       z-index: 0; 
        float: left;
-       list-style: outside none none; max-height:220px; overflow:auto;
+       list-style: outside none none; max-height:220px; overflow:scroll;
        margin:0px;
        left:0px;
        right:0px;
@@ -314,12 +493,40 @@ EcmAutoComplete.prototype.makeElementFromSelect = function (sel, html = false) {
        text-decoration: none;
        outline: 0;
      }
-     ul.ecm-options li a:hover {
+          ul.ecm-options li[data-ecm-selected] a {
      background: none repeat scroll 0 0 #eff4f6;
      cursor: pointer;
      text-decoration: underline;
 	color: #1e87f0;
     }
+
+ [data-ecm-select-display]  {
+   position: absolute;
+   top: 0px; right:0px; left: 0px; bottom: 0px;
+   background: #f8f8f8;
+   color: #666;
+   display: none;
+   padding-left: 1em;
+ } 
+ [data-ecm-select-display] a {
+    float: right; 
+	-webkit-appearance: none;
+	-moz-appearance: none;
+	width: 1em;
+	height: 100%;
+	margin: auto;
+	margin-right: 0.5em;
+        background-image: url("data:image/svg+xml;charset=utf8,%3Csvg viewBox='0 0 14 14' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath stroke='rgba(25,25, 25, 1)' stroke-width='1' stroke-linecap='round' stroke-miterlimit='10' d='M1 1 L14 14 M1 14 L14 1'/%3E%3C/svg%3E");
+	background-repeat: no-repeat;
+	background-position: 100% 50%;
+  }
+
+  [data-ecm-select-display] a:hover {
+     cursor: pointer;
+     text-decoration: underline;
+     color: #1e87f0; width: 1.33em;
+    }
+
 `;
 
 EcmAutoComplete.prototype.appendStyle = function (replace = false) {
@@ -335,18 +542,229 @@ EcmAutoComplete.prototype.appendStyle = function (replace = false) {
  
           
 
-function EcmDateTime(el) {
-  if (el.jquery) { el = el[0] };
+EcmSPA.prototype.initFunctions.ecm_date = function (el) {
+    const init = (e) => { new EcmDateTime(e) };
+    if (el.hasAttribute('data-ecm-date')) { init(el) }
+    $(el).find('[data-ecm-date]').each((_, e) => {  init (e) })
+    
+}
+function EcmDateTime(el, args = {}) {
+    const myEl = this.makeElement(),
+	  type = (args && args.type) || el.type || 'date',
+	  opts = Object.assign({}, this.defaultArgs, args),
+	  fmtStr = opts.format || opts.fmt[type],
+	  dispFmt = opts.display || opts.disp[type],
+	  iconType = opts.icon, locale = opts.locale || this.ECM.locale,
+          self = this
 
-return this.init(el);
+    EcmElement.call(this, el)
+          
+    this.options = opts
+    this.locale = locale
+    this.dateFormat = fmtStr
+    this.displayFormat = dispFmt
+    
+    $(myEl).data('EcmDateTime', this)
+    this.element = myEl;
+    this.input = $(myEl).find('[ecm-datetime-input]').get(0)
+    this.output = $(myEl).find('[ecm-datetime-output]').get(0)
+
+
+    this.datepickerArgs = $.datepicker.regional[locale]
+	|| $.datepicker.regional['en']
+	|| $.datepicker.regional['']
+
+    this.datePicker = $('<input data-ecm-datetime-date type="text">')
+	  .appendTo(myEl).get(0)
+
+    $(this.datePicker).datepicker(Object.assign(
+	 {},
+	 this.datapickerArgs,
+	 {
+	     showOn: "button",
+	     dateFormat: this.dateFormat,
+            onSelect(date, dp) {
+                console.log(date, self.parse(date))
+                self.Date = self.parse(date);
+                self.input.value = self.format(self.displayFormat)
+	     }
+	 }));
+
+    $(myEl).find('[ecm-datetime-icon]').each((_,e) => {
+	  this.icon = e
+        $(e).on('click', _ => { $(this.datePicker).datepicker("show") })
+    }).attr('uk-icon', iconType)
+    
+
+    if (el.jquery) { el = el[0] };
+    el.replaceWith(myEl);
+
+    this.initEvents()
+  
+    return this //.init(el);
+}
+
+Object.setPrototypeOf(EcmDateTime.prototype, EcmElement.prototype);
+
+EcmDateTime.prototype.defaultArgs = {
+    fmt: {
+	date: 'yy-mm-dd'
+    },
+    disp: {
+	date: 'M dd, yy'
+    },
+    icon: 'calendar'
+}
+
+EcmDateTime.prototype.format = function (fmtStr) {
+    console.log('Format', fmtStr, this.Date, this.datepickerArgs) 
+   return $.datepicker.formatDate(fmtStr, this.Date, this.datepickerArgs)
+}
+EcmDateTime.prototype.initEvents = function () {
+    // Parse on input
+    const self = this
+    $(this.input).on('keyup', function() { self.parseEvent() })
+    $(this.input).on('change', function() {
+       console.log("change event", $(self.input).parent())
+	self.parseEvent()
+	$(self.input).parent().removeClass('uk-alert-success uk-alert-danger uk-alert-warning')
+    })
+
+}
+
+
+
+/* Canadian-French initialisation for the jQuery UI date picker plugin. */
+jQuery(function ($) {
+	$.datepicker.regional['fr-CA'] = {
+		closeText: 'Fermer',
+		prevText: 'Précédent',
+		nextText: 'Suivant',
+		currentText: 'Aujourd\'hui',
+		monthNames: ['janvier', 'février', 'mars', 'avril', 'mai', 'juin',
+			'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'],
+		monthNamesShort: ['janv.', 'févr.', 'mars', 'avril', 'mai', 'juin',
+			'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'],
+		dayNames: ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'],
+		dayNamesShort: ['dim.', 'lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.'],
+		dayNamesMin: ['D', 'L', 'M', 'M', 'J', 'V', 'S'],
+		weekHeader: 'Sem.',
+		dateFormat: 'yy-mm-dd',
+		firstDay: 0,
+		isRTL: false,
+		showMonthAfterYear: false,
+		yearSuffix: ''
+	};
+});
+EcmDateTime.prototype.setDate = function(val) {
+    if (val instanceof Date || !val) {
+	this._Date = val
+        this.output.value = this.format(this.dateFormat)
+        
+	return val
+    } else if (typeof val == 'object') {
+	const valDate = this._Date || new Date()
+	if (val.year) valDate.setFullYear(val.year)
+
+	if (val.month) {
+	    valDate.setMonth(val.month - 1)
+	} else valDate.setMonth(0)
+    if (val.day) {
+	    valDate.setDate(val.day)
+	} else valDate.setDate(1)
+
+
+	return this.setDate(valDate)
+    }
+}
+
+Object.defineProperty(EcmDateTime.prototype, "Date", {
+    get() { return this._Date || false },
+    set(val) { return this.setDate(val) }
+})
+	
+EcmDateTime.prototype.parseLocales = ['en-CA', 'fr-CA'];
+EcmDateTime.prototype.parse = function(str = false) {
+    var firstLocale = this.locale || $('body').data('ecmSPA').locale,
+	Locales = [firstLocale, ... this.parseLocales.filter(l => l !== firstLocale)],
+	string = !!str ? str : this.input.value,
+	parse = (l) => anyDateParser.attempt(string, l),
+	date = false, n = 0
+
+    while (!date && Locales[n]) {
+	const ret = parse(Locales[n])
+
+	if (!ret.invalid) {
+	    date = ret
+	} else {
+	    n = n + 1
+	}
+    }
+
+    return date
+}
+
+EcmDateTime.prototype.parseEvent = function() {
+    const wrapper = $(this.icon).parent()
+
+    $(wrapper).removeClass('uk-alert-success uk-alert-danger uk-alert-warning')
+	.addClass('uk-alert-warning')
+	.attr('uk-tooltip', 'parsing ...')
+
+    $(wrapper).each((_, element) => UIkit.tooltip(element).show())
+
+    this.icon.style.color = 'unset'
+    
+
+    const date = this.parse()
+    this.Date = date
+
+    if (date) {
+        console.log('parsed: ', date);
+        $(wrapper).each((_, element) => UIkit.tooltip(element).hide())
+	$(wrapper).removeClass('uk-alert-warning').addClass('uk-alert-success')
+	    .attr('uk-tooltip', this.output.value)
+        $(wrapper).each((_, element) => UIkit.tooltip(element).show())
+    }
+
+}
+
+ EcmDateTime.prototype.elementHtml = `
+ <div data-ecm-datetime-wrapper class="uk-margin uk-inline uk-input">
+          <a ecm-datetime-icon class="uk-form-icon uk-form-icon-flip" href="#" uk-icon="icon: link"></a>
+          <input ecm-datetime-input class="uk-input" type="text">
+          <style> [data-ecm-datetime-wrapper] { position: relative }
+           [data-ecm-datetime-wrapper] .uk-input {
+               background: unset;
+               height: 38px;
+               vertical-align: unset;
+            border: 0px;
+           }
+           [data-ecm-datetime-wrapper] .ui-datepicker-trigger { display: none }
+           [data-ecm-datetime-wrapper] .hasDatepicker { 
+             position: absolute; bottom: 0px ; border: none; height:0px; width:0px; z-index; -42 }
+           [data-ecm-datetime-wrapper] .hasDatepicker:focus-visible {
+	        outline: none
+             }
+           </style>
+          <input ecm-datetime-output type="hidden">
+</div> 
+`;
+EcmDateTime.prototype.makeElement = function(html = false) {
+ const edoc = new DOMParser().parseFromString(html || this.elementHtml, "text/html"),
+       child = edoc.body.firstChild
+    return child;
 }      
 
- $(function () {
-    globalThis.ECM = new EcmSPA();
+window.addEventListener("load", (event) => {
+    const ECM =  new EcmSPA();
+    globalThis.ECM = ECM
 
- $("#EcmSPA").each((_, e) => {
- 	ECM.loadElement('/main.html')
-	    .then(ne => { $(e).empty(); $(e).append(ne) })
-     });
 
+    ECM.loadScript('EcmSelect.js').then(_ => {
+ 	ECM.loadElement('/main.html').then(main => {
+	    const body = document.querySelector("#EcmSPA")
+	    body.replaceChildren(main)
+	})
+    })
 });
