@@ -1,0 +1,85 @@
+#+TITLE: Emacs: Love it and/or Hate it, we use the Lisp.
+
+* =Outli= mode
+
+I like to program in a literate style. But, the issue becomes that,
+while the train of thought writings and documentation thereof is quite
+helpful, it does not make a good source file.
+
+As the same time a good source file does not quite make a decent
+literate document, though by itself it could be.
+
+Thus, =outline-mode=, and the =outli-mode= equivalent, can help.
+
+** Structure: Headings, prose, source code.
+
+For some reason my head went back http
+
+[[to://mumble.net/~campbell/scheme/style.txt][Riastradh's Lisp Style Rules]] which I remember being CL but, heh, they
+are Scheme. As are we.
+
+#+begin_src emacs-lisp
+  (add-to-list 'outli-heading-config '(scheme-mode ";;;" 59 t))
+#+end_src
+
+#+begin_src org
+  ,* Comments
+
+    Write heading comments with at least four semicolons; see also the
+    section below titled `Outline Headings'.
+
+    Write top-level comments with three semicolons.
+
+    Write comments on a particular fragment of code before that fragment
+    and aligned with it, using two semicolons.
+
+    Write margin comments with one semicolon.
+
+    The only comments in which omission of a space between the semicolon
+    and the text is acceptable are margin comments.
+
+      Examples:
+
+        ;;;; Frob Grovel
+
+        ;;; This section of code has some important implications:
+        ;;;   1. Foo.
+        ;;;   2. Bar.
+        ;;;   3. Baz.
+
+        (define (fnord zarquon)
+          ;; If zob, then veeblefitz.
+          (quux zot
+                mumble             ;Zibblefrotz.
+                frotz))
+
+  ,* Outline Headings
+
+  Use Emacs's Outline Mode to give titles to the pages, and if
+  appropriate a hierarchical structure.  Set `outline-regexp' (or
+  `outline-pattern' in Edwin) to "\f\n;;;;+ ", so that each form feed
+  followed by an line break followed by at least four semicolons and a
+  space indicates an outline heading to Emacs.  Use four semicolons for
+  the highest level of headings in the hierarchy, and one more for each
+  successively nested level of hierarchy.
+
+    Rationale:  Not only does this clarify the organization of the code,
+    but readers of the code can then navigate the code's structure with
+    Outline Mode commands such as `C-c C-f', `C-c C-b', `C-c C-u', and
+    `C-c C-d' (forward, backward, up, down, respectively, headings).
+
+#+end_src
+** =outli=, org for not org, outline but better
+:PROPERTIES:
+:CUSTOM_ID: outli-org-for-not-org-outline-but-better
+:END:
+
+https://github.com/jdtsmith/outli
+#+begin_src emacs-lisp
+  (use-package outli
+    :straight (outli :type git :host github :repo "jdtsmith/outli")
+    :bind (:map outli-mode-map ; convenience key to get back to containing heading
+  	      ("C-c C-p" . (lambda () (interactive) (outline-back-to-heading)))))
+#+end_src
+
+

@@ -1,0 +1,813 @@
+:PROPERTIES:
+:ID:       9A562710-B6E1-4390-8339-8714F8C2DFB5
+:END:
+#+title: HTTPD
+
+This is where the HTTPD is developed/hacked/wikified.
+
+=HTTP= servers are a part of the [[id:298E9908-6F4F-495E-9D56-534C41ABCBE6][Ensemble]]. There's also the 
+
+
+* SO_REUSEPORT
+
+We want multi-processes that can listen on the same =address:port=
+
+#+begin_src scheme :tangle /tmp/mp-httpd.ss
+  (import :std/net/httpd :std/os/socket)
+
+  (def (a-handler req res)
+    (http-response-write
+     res 200 '(("Content-Type" . "text/html"))
+     (string-append "hello, " 
+  		  " <a href=\"/sleep\">sleep</a>\n")))
+  (def (sleep-handler req res)
+    (thread-sleep! 10)
+    (http-response-write
+     res 200 '(("Content-Type" . "text/html"))
+     (string-append "hello agan, " 
+  		  " <a href=\"/sleep\">sleep</a>\n")))
+
+  (def httpd (start-http-server!
+  	    sockopts: [SO_REUSEPORT SO_REUSEADDR]
+  	    "0.0.0.0:7807"))
+
+  (http-register-handler httpd "/" a-handler)
+  (http-register-handler httpd "/sleep" sleep-handler)
+#+end_src
+
+ Well, heh, the sleep did nothing as we have green threads but
+ shutting down one process did allow the other to be used.
+
+* The Gerbil Embedded HTTP Server
+:PROPERTIES:
+:CUSTOM_ID: the-embedded-http-server
+:END:
+
+The =:std/net/httpd= library provides an embedded HTTP/1.1 server, which
+you can use to serve web applications and apis from your program.
+
+See the [[/tutorials/httpd.md][tutorial]] for a simple example program
+which uses the server.
+
+::: tip To use the bindings from this package:
+
+#+begin_src scheme
+(import :std/net/httpd)
+#+end_src
+
+:::
+
+** Server Interface
+:PROPERTIES:
+:CUSTOM_ID: server-interface
+:END:
+*** current-http-server
+:PROPERTIES:
+:CUSTOM_ID: current-http-server
+:END:
+#+begin_src scheme
+(current-http-server [server])
+#+end_src
+
+Parameter denoting the current http server.
+
+*** start-http-server!
+:PROPERTIES:
+:CUSTOM_ID: start-http-server
+:END:
+#+begin_src scheme
+(start-http-server! [mux: mux = (make-default-http-mux)]
+                    [backlog: backlog = 10]
+                    [sockopts: sockopts = [SO_REUSEADDR]]
+                    address ...) -> <server>
+
+  mux := request multiplexer
+  backlog := server socket listen backlog
+  sockpts := server socket options.
+  address ... := addresses to listen; either an inet-address or [ssl: inet-address ssl-context]
+#+end_src
+
+Start a new http server serving in the specified addresses and
+multiplexing requests using the specified multiplexer.
+
+The addresses in the address list can have one of these forms: -
+=[ssl: inet-address ssl-context]= is an SSL address, using the supplied
+server =ssl-context=; see [[file:ssl.md][TLS/SSL Sockets]] for details
+on how to create a server SSL context. - =inet-address= is a plaintext
+TCP address; suitable if you are behind a load balancer or proxy, eg
+=nginx=.
+
+*** stop-http-server!
+:PROPERTIES:
+:CUSTOM_ID: stop-http-server
+:END:
+#+begin_src scheme
+(stop-http-server! <server>)
+#+end_src
+
+Stops the http server and all associated threads.
+
+*** http-register-handler
+:PROPERTIES:
+:CUSTOM_ID: http-register-handler
+:END:
+#+begin_src scheme
+(http-register-handler httpd path handler [host = #f])
+
+  httpd   := server; the http server
+  path    := string; the path to associate with the handler
+  handler := procedure; the request handler
+  host    := string; the host to associate with the handler
+#+end_src
+
+Registers a new http request handler, for multiplexers that support
+dynamic request handlers.
+
+** Request Multiplexer
+:PROPERTIES:
+:CUSTOM_ID: request-multiplexer
+:END:
+The request multiplexer is the object responsible for mapping paths (and
+hosts) to request handlers.
+
+It is an arbitrary object with two methods:
+
+#+begin_example
+{get-handler mux host path}
+=> <handler> or #f
+
+{put-handler! mux host path handler}
+#+end_example
+
+=get-handler= retrieves the handler corresponding to a path.
+=put-handler!= is invoked in response to =http-register-handler= to
+dynamically register a handler for a path. Custom mux implementations
+may define this method as void if they don't support dynamic handler
+registration.
+
+*** make-default-http-mux
+:PROPERTIES:
+:CUSTOM_ID: make-default-http-mux
+:END:
+#+begin_src scheme
+(make-default-http-mux [default = #f]) -> <mux>
+
+  default := handler; the default page handler
+#+end_src
+
+Creates a default request multiplexer, which maps exact paths to
+handlers for all hosts. The default handler is returned if no handler
+has been registered for the path.
+
+*** make-recursive-http-mux
+:PROPERTIES:
+:CUSTOM_ID: make-recursive-http-mux
+:END:
+#+begin_src scheme
+(make-recursive-http-mux [default = #f]) -> <mux>
+
+  default := handler; the default page handler
+#+end_src
+
+Creates a request multiplexer that maps paths and their subpaths to
+handlers for all hosts. The default handler is returned if no handler
+has been registered for the path or a prefix.
+
+*** make-static-http-mux
+:PROPERTIES:
+:CUSTOM_ID: make-static-http-mux
+:END:
+#+begin_src scheme
+(make-static-http-mux table [default = #f]) -> <mux>
+
+  table   := hash table, mapping paths (strings) to handlers
+  default := the default page handler
+#+end_src
+
+Creates a static request multiplexer initialized from a hash table of
+handlers. The multiplexer does not support dynamic handler registration
+with =put-handler!=. The advantage over the default mux is that there is
+no mutex associated with the handler table, resulting in faster
+(concurrent) handler lookup.
+
+*** make-recursive-static-http-mux
+:PROPERTIES:
+:CUSTOM_ID: make-recursive-static-http-mux
+:END:
+#+begin_src scheme
+(make-recursive-static-http-mux table [default = #f]) -> <mux>
+
+  table   := hash table, mapping paths (strings) to handlers
+  default := the default page handler
+#+end_src
+
+Creates a static request multiplexer initialized from a hash table of
+handlers. Like =make-recursive-http-mux=, the multiplexer maps paths and
+their subpaths to handlers for all hosts.
+
+*** make-custom-http-mux
+:PROPERTIES:
+:CUSTOM_ID: make-custom-http-mux
+:END:
+#+begin_src scheme
+(make-custom-http-mux getf [setf = void]) -> <mux>
+
+  getf := procedure that resolves the handler
+  setf := procedure that adds a new handler
+#+end_src
+
+Creates a request multiplexer that dispatches to user procedures for
+handler resolution and registration.
+
+** Request Handler Interface
+:PROPERTIES:
+:CUSTOM_ID: request-handler-interface
+:END:
+The request handler is a procedure accepting two arguments, a request
+and a response.
+
+*** http-request?
+:PROPERTIES:
+:CUSTOM_ID: http-request
+:END:
+#+begin_src scheme
+(http-request? obj) -> boolean
+#+end_src
+
+Returns true for http request objects.
+
+*** http-request-method
+:PROPERTIES:
+:CUSTOM_ID: http-request-method
+:END:
+#+begin_src scheme
+(http-request-method <request>) -> symbol
+#+end_src
+
+Returns the request method.
+
+*** http-request-url
+:PROPERTIES:
+:CUSTOM_ID: http-request-url
+:END:
+#+begin_src scheme
+(http-request-url <request>) -> string
+#+end_src
+
+Returns the request URL.
+
+*** http-request-path
+:PROPERTIES:
+:CUSTOM_ID: http-request-path
+:END:
+#+begin_src scheme
+(http-request-path <request>) -> string
+#+end_src
+
+Returns the request path.
+
+*** http-request-params
+:PROPERTIES:
+:CUSTOM_ID: http-request-params
+:END:
+#+begin_src scheme
+(http-request-params <request>) -> string or #f
+#+end_src
+
+Returns the request parameters.
+
+*** http-request-proto
+:PROPERTIES:
+:CUSTOM_ID: http-request-proto
+:END:
+#+begin_src scheme
+(http-request-proto <request>) -> string
+#+end_src
+
+Returns the request protocol.
+
+*** http-request-client
+:PROPERTIES:
+:CUSTOM_ID: http-request-client
+:END:
+#+begin_src scheme
+(http-request-client <request>) -> address
+#+end_src
+
+Returns the IP address of the request client.
+
+*** http-request-headers
+:PROPERTIES:
+:CUSTOM_ID: http-request-headers
+:END:
+#+begin_src scheme
+(http-request-headers <request>) -> alist
+#+end_src
+
+Returns the request headers, as an associative list of string to string;
+the headers are title-cased.
+
+*** http-request-body
+:PROPERTIES:
+:CUSTOM_ID: http-request-body
+:END:
+#+begin_src scheme
+(http-request-body <request>) -> u8vector or #f
+#+end_src
+
+Reads and returns the request body.
+
+*** http-request-timeout-set!
+:PROPERTIES:
+:CUSTOM_ID: http-request-timeout-set
+:END:
+#+begin_src scheme
+(http-request-timeout-set! <request> <timeout>) -> unspecified
+#+end_src
+
+Sets the request timeout (in seconds).
+
+*** http-response?
+:PROPERTIES:
+:CUSTOM_ID: http-response
+:END:
+#+begin_src scheme
+(http-response? obj) -> boolean
+#+end_src
+
+Returns true for http response objects.
+
+*** http-response-write
+:PROPERTIES:
+:CUSTOM_ID: http-response-write
+:END:
+#+begin_src scheme
+(http-response-write res status headers body) -> unspecified
+
+  res := the http response object
+  status := fixnum; the response status code
+  headers := alist; the response headers
+  body := string, u8vector or #f; the response body
+#+end_src
+
+Writes a complete response.
+
+*** http-response-begin
+:PROPERTIES:
+:CUSTOM_ID: http-response-begin
+:END:
+#+begin_src scheme
+(http-response-begin res status headers) -> unspecified
+
+  res := the http response object
+  status := fixnum; the response status code
+  headers := alist; the response headers
+#+end_src
+
+Begins a chunked response.
+
+*** http-response-chunk
+:PROPERTIES:
+:CUSTOM_ID: http-response-chunk
+:END:
+#+begin_src scheme
+(http-response-chunk res chunk [start = 0] [end = #f]) -> unspecified
+
+  res := the http response object
+  chunk := string or u8vector; the response chunk
+  start := fixnum; the start index in the chunk
+  end := fixnum or #f; the end index in the chunk
+#+end_src
+
+Writes the next chunk in a chunked response.
+
+*** http-response-end
+:PROPERTIES:
+:CUSTOM_ID: http-response-end
+:END:
+#+begin_src scheme
+(http-response-end <response>) -> unspecified
+#+end_src
+
+Ends a chunked response.
+
+*** http-response-file
+:PROPERTIES:
+:CUSTOM_ID: http-response-file
+:END:
+#+begin_src scheme
+(http-response-file res headers path) -> unspecified
+
+  res := the http response object
+  headers := alist; the response headers
+  path := string; the path to the file to serve as the response
+#+end_src
+
+Writes a file as a response.
+
+*** http-response-force-output
+:PROPERTIES:
+:CUSTOM_ID: http-response-force-output
+:END:
+#+begin_src scheme
+(http-response-force-output <response>) -> unspecified
+#+end_src
+
+Flushes the response buffer.
+
+*** http-response-timeout-set!
+:PROPERTIES:
+:CUSTOM_ID: http-response-timeout-set
+:END:
+#+begin_src scheme
+(http-response-timeout-set! <response> <timeout>) -> unspecified
+#+end_src
+
+Sets the response timeout.
+
+** Server Configuration Options
+:PROPERTIES:
+:CUSTOM_ID: server-configuration-options
+:END:
+*** set-httpd-request-timeout!
+:PROPERTIES:
+:CUSTOM_ID: set-httpd-request-timeout
+:END:
+#+begin_src scheme
+(set-httpd-request-timeout! <timeout>) -> unspecified
+#+end_src
+
+Sets the http request timeout; default is 60s.
+
+*** set-httpd-response-timeout!
+:PROPERTIES:
+:CUSTOM_ID: set-httpd-response-timeout
+:END:
+#+begin_src scheme
+(set-httpd-response-timeout! <timeout>) -> unspecified
+#+end_src
+
+Sets the http response timeout; default is 120s.
+
+*** set-httpd-max-request-headers!
+:PROPERTIES:
+:CUSTOM_ID: set-httpd-max-request-headers
+:END:
+#+begin_src scheme
+(set-httpd-max-request-headers! <fixnum>) -> unspecified
+#+end_src
+
+Sets the maximum number of headers to accept in a request; default
+is 256.
+
+*** set-httpd-max-token-length!
+:PROPERTIES:
+:CUSTOM_ID: set-httpd-max-token-length
+:END:
+#+begin_src scheme
+(set-httpd-max-token-length! <fixnum>) -> unspecified
+#+end_src
+
+Sets the maximum header token length; default is 1024
+
+*** set-httpd-max-request-body-length!
+:PROPERTIES:
+:CUSTOM_ID: set-httpd-max-request-body-length
+:END:
+#+begin_example
+(set-httpd-max-request-body-length! <fixnum>) -> unspecified
+#+end_example
+
+Sets the maximum request body length; default is 1MB.
+
+*** set-httpd-input-buffer-size!
+:PROPERTIES:
+:CUSTOM_ID: set-httpd-input-buffer-size
+:END:
+#+begin_src scheme
+(set-httpd-input-buffer-size! <fixnum>) -> unspecified
+#+end_src
+
+Sets the request input buffer size; default is 4KB.
+
+*** set-httpd-output-buffer-size!
+:PROPERTIES:
+:CUSTOM_ID: set-httpd-output-buffer-size
+:END:
+#+begin_src scheme
+(set-httpd-output-buffer-size! <fixnum>) -> unspecified
+#+end_src
+
+Sets the response output buffer size; default is 4KB.
+
+
+* Web programming with the Gerbil http server
+:PROPERTIES:
+:CUSTOM_ID: web-programming-with-the-gerbil-http-server
+:END:
+** Preliminaries
+:PROPERTIES:
+:CUSTOM_ID: preliminaries
+:END:
+In this tutorial we illustrate web programming with the embedded Gerbil
+http server.
+
+The source code for the tutorial is available at
+[[https://github.com/mighty-gerbils/gerbil/tree/master/src/tutorial/httpd][src/tutorial/httpd]].
+You can build the code using the
+[[https://github.com/mighty-gerbils/gerbil/tree/master/src/tutorial/httpd/build.ss][build
+script]]:
+
+#+begin_example
+$ cd gerbil/src/tutorial/httpd
+$ gerbil build
+...
+#+end_example
+
+** A Simple Web Server
+:PROPERTIES:
+:CUSTOM_ID: a-simple-web-server
+:END:
+The
+[[https://github.com/mighty-gerbils/gerbil/blob/master/src/tutorial/httpd/simpled.ss][server]]
+binds by default to localhost:8080 and handles 3 request URLs: - =/=
+which greets the requestor - =/echo= which echoes back the body of the
+request - =/headers[?json]= which echoes back the request headers -
+=/self= which prints the source code of the program
+
+*** The main function
+:PROPERTIES:
+:CUSTOM_ID: the-main-function
+:END:
+The server =main= function uses getopt to parse arguments and then calls
+the =run= function. It starts an http server using the default handler
+multiplexer, and registers handlers using =http-register-handler= for
+the various paths we want to handle:
+
+#+begin_src scheme
+(def (main . args)
+  (call-with-getopt simpled-main args
+    program: "simpled"
+    help: "A simple httpd server"
+    (option 'address "-a" "--address"
+      help: "server address"
+      default: "127.0.0.1:8080")))
+
+(def (simpled-main opt)
+  (run (hash-ref opt 'address)))
+
+(def (run address)
+  (let (httpd (start-http-server! address mux: (make-default-http-mux default-handler)))
+    (http-register-handler httpd "/" root-handler)
+    (http-register-handler httpd "/echo" echo-handler)
+    (http-register-handler httpd "/headers" headers-handler)
+    (http-register-handler httpd "/self" self-handler)
+    (thread-join! httpd)))
+#+end_src
+
+*** Request Handlers
+:PROPERTIES:
+:CUSTOM_ID: request-handlers
+:END:
+Request handlers are functions that accept two arguments: a request and
+a response object. The request object bundles the request together,
+while the response object offers an interface to write the response.
+Request handlers are dispatched in a new thread.
+
+**** The =/= handler
+:PROPERTIES:
+:CUSTOM_ID: the-handler
+:END:
+The root handler simply prints a hello message:
+
+#+begin_src scheme
+(def (root-handler req res)
+  (http-response-write res 200 '(("Content-Type" . "text/plain"))
+    (string-append "hello, " (inet-address->string (http-request-client req)) "\n")))
+#+end_src
+
+**** The =/echo= handler
+:PROPERTIES:
+:CUSTOM_ID: the-echo-handler
+:END:
+The echo handler echoes back the body of the request:
+
+#+begin_src scheme
+(def (echo-handler req res)
+  (let* ((content-type
+          (assget "Content-Type" (http-request-headers req)))
+         (headers
+          (if content-type
+            [["Content-Type" . content-type]]
+            [])))
+    (http-response-write res 200 headers
+      (http-request-body req))))
+#+end_src
+
+**** The =/headers= handler
+:PROPERTIES:
+:CUSTOM_ID: the-headers-handler
+:END:
+The headers handler responds with the headers of the request, either in
+plain text or in json if requested so with a =?json= parameter. The
+plain text handler uses the chunked response interface.
+
+#+begin_src scheme
+(def (headers-handler req res)
+  (let (headers (http-request-headers req))
+    (if (equal? (http-request-params req) "json")
+      (write-json-headers res headers)
+      (write-text-headers res headers))))
+
+(def (write-json-headers res headers)
+  (let (content
+        (json-object->string
+         (list->hash-table headers)))
+    (http-response-write res 200 '(("Content-Type" . "application/json"))
+      content)))
+
+(def (write-text-headers res headers)
+  (http-response-begin res 200 '(("Content-Type" . "text/plain")))
+  (for ([key . val] headers)
+    (http-response-chunk res (string-append key ": " val "\n")))
+  (http-response-end res))
+#+end_src
+
+**** The =/self= handler
+:PROPERTIES:
+:CUSTOM_ID: the-self-handler
+:END:
+The self handler responds by printing the server source code. The
+handler uses the =http-response-file= procedure, which sends a file as
+an http response using fast raw device I/O.
+
+#+begin_src scheme
+(def (self-handler req res)
+  (http-response-file res '(("Content-Type" . "text/plain")) "simpled.ss"))
+#+end_src
+
+**** The default handler
+:PROPERTIES:
+:CUSTOM_ID: the-default-handler
+:END:
+The default handler is invoked when there is no matching handler. If no
+default handler is registered with the multiplexer, then the server
+simply responds with a 404.
+
+Here, we registered a slightly friendlier handler that uses the force to
+print an informative message:
+
+#+begin_src scheme
+(def (default-handler req res)
+  (http-response-write res 404 '(("Content-Type" . "text/plain"))
+    "these aren't the droids you are looking for.\n"))
+#+end_src
+
+*** Examples
+:PROPERTIES:
+:CUSTOM_ID: examples
+:END:
+Here are some example interactions with the server using curl:
+
+#+begin_src sh
+## in one terminal
+$ gerbil env simpled
+
+## in another terminal
+$ curl http://localhost:8080/
+hello, 127.0.0.1:39189
+
+$ curl --data-binary "hello gerbil" http://localhost:8080/echo
+hello gerbil
+
+$ curl http://localhost:8080/headers
+Host: localhost:8080
+User-Agent: curl/7.45.0
+Accept: */*
+
+$ curl http://localhost:8080/headers?json
+{"Accept":"*/*","Host":"localhost:8080","User-Agent":"curl/7.45.0"}
+
+$ curl -i http://localhost:8080/bogus
+HTTP/1.1 404 Not Found
+Date: Tue Aug 22 16:16:19 2017
+Content-Length: 45
+Content-Type: text/plain
+
+these aren't the droids you are looking for.
+#+end_src
+
+*** Deploying with nginx
+:PROPERTIES:
+:CUSTOM_ID: deploying-with-nginx
+:END:
+A developed application can be deployed on a server, such as a VPS,
+using [[https://nginx.org/en][nginx]] as a reverse proxy. This tutorial
+assumes you're using a linux server with systemd. Steps involved
+include:
+
+1. Compiling your server into a binary
+2. Installing necessary prerequisites
+3. Configuring nginx as a reverse proxy
+4. Using systemd (or similar) to run your binary as a service
+
+**** Install and configure nginx
+:PROPERTIES:
+:CUSTOM_ID: install-and-configure-nginx
+:END:
+Check out the [[https://nginx.org/en/docs/install.html][nginx
+installation documentation]] for detailed instructions on how to install
+engine x. Typically this can be done with your distribution's package
+manager.
+
+Once installed, create an nginx profile at /etc/nginx/sites-available.
+If you're only using one such profile, consider editing the default
+profile at /etc/nginx/sites-available/default to include the following:
+
+#+begin_example
+server {
+    listen 80;
+    listen [::]:80;
+    server_name www.example.com;
+
+location / {
+        # Forward requests to Gerbil production port
+        proxy_pass http://localhost:8080;
+        proxy_buffering off; # Single page apps work faster with it
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+#+end_example
+
+Notes:
+
+- www.example.com should be replaced with your domain name or server IP
+  address. Note that multiple values are supported, such as
+  =server_name  domain1.com www.domain1.com;=
+- The line =proxy_pass http://localhost:8080;= should be set to the
+  appropriate port as determined in your Gerbil =getopt= configuration.
+  Replace /8080/ with the port number that Gerbil's httpd will be
+  listening on.
+
+If you have edited the file /etc/nginx/sites-available/default, you are
+ready to go. If you've created another profile, you will need to symlink
+to this file in /etc/nginx/sites-enabled.
+
+By default, nginx is typically set to start at boot. However, after
+changing this config file, you will need to restart the service:
+
+#+begin_src sh
+sudo systemctl restart nginx
+#+end_src
+
+**** Create systemd service
+:PROPERTIES:
+:CUSTOM_ID: create-systemd-service
+:END:
+The following assumes you have a project called /my-server/, with a
+Gerbil binary called /my-server/.
+
+Create a systemd service file at /etc/systemd/system/my-server for your
+application. A minimal working example is:
+
+#+begin_example
+[Unit]
+Description=my-server website
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+WorkingDirectory=/srv/my-server
+ExecStart=/srv/my-server/my-server
+User=web
+Group=web
+
+[Install]
+WantedBy=multi-user.target
+#+end_example
+
+In the above example:
+
+- Replace =my-server website= with an appropriate description.
+- Replace =/srv/my-server= with an appropriate working directory,
+  possibly the directory of your project on the server.
+- Replace =/srv/my-server/my-server= with the path to your compiled
+  Gerbil binary.
+- Replace =web= with an existing user and group (as created with
+  =useradd=). Systemd will run your server with the privileges of this
+  user. Note that this user must have read and execute privileges for
+  your binary and workingDirectory.
+
+This service can be manually started with
+=sudo systemctl start my-server=. Once running, you can view Gerbil's
+responses with =sudo journalctl -f -u my-server=.
+
+Once confirmed, set the Gerbil server to run automatically, including
+persistence after reboot:
+
+#+begin_example
+sudo systemctl enable my-server
+#+end_example

@@ -1,0 +1,66 @@
+#+TITLE: Configuration
+
+There's a few things that need a configuration file to avoid
+hardcoding things.
+
+#+begin_src scheme :tangle file.ss
+  (import :std/text/json :std/error)
+  (export #t)
+
+  ;;;; Configuration File 
+
+  ;;; Configuration is stored within a file. Usually that file is at
+  ;;; =~/.ecm/ecm.jsom=
+
+  (def default-conf-file "~/.ecm/ecm.json")
+
+  ;;; The conf file is JSON.
+
+  (def (read-conf-file (filename default-conf-file))
+    (call-with-input-file filename read-json))
+
+  ;;;;; File not found
+
+  (deferror-class ConfFileNotFound () conf-file-not-found?)
+
+  (def (raise-conf-file-not-found . filename)
+    (raise (ConfFileNotFound "Configuration file-not-found" irritants: filename)))
+
+  ;;;; The Configuration Hash Table
+
+  (def conf-table #f)
+
+  (def (ensure-conf-table (filename default-conf-file) refresh: (load? #f))
+    (if (and conf-table (not load?))
+      conf-table
+      (if (file-exists? filename)
+        (begin (set! conf-table (read-conf-file filename))
+  	     conf-table)
+        (raise-conf-file-not-found filename))))
+
+  (def (conf-ref key (default #f) refresh: (load? #f))
+    (hash-ref (or (and (not load?) conf-table)
+  		(ensure-conf-table refresh: load?))
+  	    key default))
+
+  ;;;; The =conf-value= function
+
+  ;;; Some values are tables. We want to go further.
+
+  (def (conf-value key refresh: (load? #f) default: (d #f) . keys)
+    (def val (conf-ref key d refresh: load?))
+    (def (rec-ref tbl keys)
+      (with* (([k ks ...] keys)
+  	    (val (hash-ref tbl k d)))
+        (if (null? ks) val
+  	  (if (hash-table? val)
+  	    (rec-ref val ks)
+  	    d))))
+      
+    (if (null? keys) val
+        (if (hash-table? val)
+  	(rec-ref val keys)
+  	d)))
+        
+        
+#+end_src

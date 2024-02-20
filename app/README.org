@@ -1,0 +1,16 @@
+#+TITLE: The ECM Application and User Interface
+
+This portion surrounds what the end-user calls ECM. It's the front
+end, and the reason things in the backend exist at all.
+
+It starts and ends here.
+
+
+* Managers and Executives: The "Admin" portion
+
+
+
+
+
+
+

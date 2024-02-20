@@ -1,0 +1,12 @@
+:PROPERTIES:
+:ID:       0863DDAB-95E5-4D3B-9E8E-BD1498A5732C
+:END:
+#+title: ECM
+
+
+This is the main entry point for the ECM roam wiki/doc/dev filesystem
+thingie.
+
+Hopefully everything "just works" because [[file:~/me/src/ecm/.dir-locals.el][.dir-local.el]] does it for us!
+
+[[id:9A562710-B6E1-4390-8339-8714F8C2DFB5][HTTPD]]

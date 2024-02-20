@@ -1,0 +1,17 @@
+#+TITLE: Servers and Entourages: Direct the cloud!
+
+While the [[file:~/src/ecm/app/README.org][App]] is the main frntm end the backend is made of many
+different droplets. That adds up to a cloud.
+
+* HTTP(S) server(s)
+
+The main front-end is browser-based. So the entry-point to the backend
+relates to https servers. Simple!
+
+
+* The Postgresql Database
+
+
+
+
+

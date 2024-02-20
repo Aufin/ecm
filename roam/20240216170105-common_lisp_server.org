@@ -1,0 +1,28 @@
+:PROPERTIES:
+:ID:       352466C1-6818-46C1-A8C1-D694CA897770
+:END:
+#+title: Common Lisp Server
+
+In 2004 I started ECM in Common Lisp. 20 Years later and I'm moving to Gerbil.
+
+This is the "running old under new".
+
+s
+#+begin_src scheme
+  (import :gerbil/gambit :std/format :std/contract :std/interface :std/io :std/text/utf8)
+
+  (def sbcl (open-process "sbcl"))
+
+  (def buff (make-u8vector 1024))
+
+  (def in (open-buffered-reader sbcl))
+  (def out (open-buffered-writer sbcl))
+
+  (with-interface (in :- BufferedReader)
+    (when (number? (in.peek-u8))
+      (in.read buff)))
+
+
+
+
+#+end_src

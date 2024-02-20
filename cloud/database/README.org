@@ -1,0 +1,489 @@
+#+TITLE: The Database Server(s) and middle-men
+#+PROPERTY: header-args:sql :engine postgres :cmdline "\"host=maxbakuntu.lan user=maxclaims port=5432 dbname=maxclaims\""
+
+* Contents
+:PROPERTIES:
+:TOC:      :include all :depth 2 :ignore (this)
+:END:
+:CONTENTS:
+- [[#usage][Usage]]
+- [[#ecmuserdatabase-module][:ecm/user/database module]]
+- [[#interface][Interface]]
+- [[#per-user-pools][Per User Pools]]
+  - [[#function-database-connect-using-token][Function database-connect-using-token]]
+  - [[#variable-token-database-pools][Variable token-database-pools]]
+  - [[#function-make-token-conpooltok-max-connections][Function make-token-conpool(tok max-connections)]]
+  - [[#function-get-token-conpool][Function get-token-conpool]]
+  - [[#function-close-token-conpool][Function close-token-conpool]]
+  - [[#function-remove-token-conpool][Function remove-token-conpool]]
+  - [[#function-get-token-connectiontok][Function get-token-connection(tok)]]
+  - [[#function-call-with-token-connection][Function call-with-token-connection]]
+- [[#users-and-roles-united-here][Users and Roles: United here]]
+- [[#the-login-schema][The login. schema]]
+  - [[#function-logintoken_role][Function login.token_role]]
+  - [[#function-loginset_session_authorization][Function login.set_session_authorization]]
+  - [[#function-loginset_role][Function login.set_role]]
+- [[#applcation-login-uses][Applcation Login uses]]
+- [[#hacking][HACKING]]
+:END:
+
+* Postgresql Configuration
+
+** =pg_hba.conf= : Access Control
+
+Note that we trust no ssl connections from hosts local because users
+have roles and this is easier than =SET='ing them.
+
+
+#+begin_src conf :tangle ./etc/postgresql/12/main/pg_hba.cong
+  # Database administrative login by Unix domain socket
+  local   all             postgres                                peer
+
+  # TYPE  DATABASE        USER            ADDRESS                 METHOD
+
+  # "local" is for Unix domain socket connections only
+  local   all             all                                     peer
+  # IPv4 local connections:
+  hostssl    all             all             127.0.0.1/32            md5
+  hostnossl   all		all		127.0.0.1/32 trust
+  # IPv6 local connections:
+  host    all             all             ::1/128                 md5
+
+  hostssl    all       all   0.0.0.0/0    cert map=cert
+
+  # The cloud server(s2
+  hostnossl   all		all		10.42.0.12/32 trust
+
+  hostssl            all       all  71.19.249.26/32    cert map=cert
+  hostnossl            all       all  71.19.249.26/32  reject
+
+  host    all             all             76.73.96.2/32            md5
+  host    all             all             50.7.166.0/0            md5
+  host    all             all             174.7.132.154/32            md5
+
+  host    replication     all             174.7.128.78/32        md5
+  host    replication     all             174.114.179.56/32        md5
+  host    replication     all             0.0.0.0/0        md5
+
+  host replication all 172.31.18.123/32 md5
+  host replication all 54.201.97.242/32 md5
+#+end_src
+
+
+* Connect
+
+To use a database on has to connnect to the database.
+
+#+begin_src scheme :tangle connect.ss 
+  (import :std/text/json :std/db/dbi :std/db/postgresql)
+  (export #t)
+
+  (def (database-connect (user #f) (db-tbl #f))
+     (let* ((db (or db-tbl (conf-value 'database 'master)))
+  	  (host (hash-get db 'host))
+            (port (hash-get db 'port))
+            (dbname (hash-get db 'database))
+            (u (or user (hash-get db 'username))))
+       (sql-connect
+        postgresql-connect host: host port: port user: u ssl: #f db: dbname)))
+
+
+  (def (authenticate username password)
+    (def db (database-connect))
+    (let (res (car (sql-eval-query db "SELECT login.login_user($1, $2)"
+  				 username password)))
+      (sql-close db)
+      (if (not res) res
+  	(call-with-input-string res read-json))))
+
+  ;;; `create-reset-token` => (full-name username token) || #f
+  (def (create-reset-token email)
+    (def db (database-connect))
+    (let (res (sql-eval-query
+  	     db "SELECT person_short_name(person_id), username,
+       login.\"create\"(app_user_id)
+     FROM app_user RIGHT JOIN person USING (person_id)
+     WHERE email_address = $1" email))
+      (if (null? res) #f (vector->list (car res)))))
+
+  (def (reset-password tok pw)
+    (def db (database-connect))
+    (let (res (sql-eval-query db "SELECT login.change_password($1, $2)" tok pw))
+      (if (null? res) #f (car res))))
+      
+#+end_src
+
+* Usage
+:PROPERTIES:
+:CUSTOM_ID: usage
+:END:
+
+In general a =token= is provided and =ECM= knows the user that token
+is assigned to.
+
+There's a function, =call-with-token-connection=, that makes sure to
+recycle the connection as needed.
+
+#+begin_src scheme
+  (import :ecm/user/database :std/db/dbi)
+
+  (call-with-token-connection "ASDASDAD" ... )
+#+end_src
+
+
+* =:ecm/user/database= module
+:PROPERTIES:
+:CUSTOM_ID: ecmuserdatabase-module
+:END:
+#+begin_src scheme :tangle ./user/database.ss
+  (import ./database/pool ./database/interface)
+  (export (import: ./database/pool ./database/interface))
+#+end_src
+
+* Interface
+:PROPERTIES:
+:CUSTOM_ID: interface
+:END:
+
+#+begin_src scheme :tangle ./user/database/interface.ss
+  (export #t)
+
+  (def current-user-database (make-parameter #f))
+#+end_src
+
+* Per User Pools
+:PROPERTIES:
+:CUSTOM_ID: per-user-pools
+:header-args:scheme: :tangle ./user/database/pool.ss
+:END:
+
+Gerbil has [[https://cons.io/reference/std/db/conpool.html#connection-pools][Connection Pools]] which takes some of our worries
+away. Because some tasks (like reports) can take minutes we may need a
+single user connected many times.
+
+
+#+begin_src scheme :tangle ./user/database/pool.ss :comments link 
+  (import :std/text/json :std/db/dbi :std/db/postgresql :std/db/conpool :std/sugar
+  	./interface ../../login/conf)
+  (export #t (import: ../../login/conf))
+
+#+end_src
+
+** /Function/ =database-connect-using-token=
+:PROPERTIES:
+:CUSTOM_ID: function-database-connect-using-token
+:END:
+We can get a role from a token that the front end gets as the login session [[#function-logintoken_role][from =login.token_role=]].
+
+#+begin_src scheme
+  (def (database-connect-using-token tok)
+    (let* ((db (conf-value '(database master)))
+   	 (host (conf-value 'host db))
+           (port (conf-value 'port db))
+           (dbname (conf-value 'database db))
+           (u (conf-value 'username db))
+           (p (conf-value 'password db))
+  	 (conn (sql-connect postgresql-connect
+  			    ssl: #f
+  			    host: host port: port
+  			    user: u passwd: p db: dbname)))
+      (try (begin0 conn
+  	     (sql-eval conn "\
+   SELECT login.set_role(role), login.set_session_authorization(role)
+   FROM (SELECT * FROM login.token_role($1) role) token;" tok))
+  	 (catch (e)
+  	   (sql-close conn)
+  	   (error "Invalid Token" tok e)))))
+#+end_src
+
+** /Variable/ =token-database-pools=
+:PROPERTIES:
+:CUSTOM_ID: variable-token-database-pools
+:END:
+
+Every token gets a pool.
+
+#+begin_src scheme
+  (def token-database-pools (make-hash-table))
+#+end_src
+
+** /Function/ =make-token-conpool(tok max-connections)=
+:PROPERTIES:
+:CUSTOM_ID: function-make-token-conpooltok-max-connections
+:END:
+
+#+begin_src scheme :tangle no
+> (make-token-conpool "4744e6c3-dad0-48b4-ba61-5024445b3dfd")
+#<conpool #42>
+> (conpool-get # 42)
+#<postgresql-connection #43
+   host: "maxbakuntu.lan"
+   port: 5432
+   user: "maxclaims"
+   db: "maxclaims">
+> (sql-eval-query # "SELECT SESSION_USER, CURRENT_USER")
+(#("mu_1" "mu_1"))
+#+end_src
+
+#+begin_src scheme
+  (def (make-token-conpool tok (max-connections 10))
+    (def (token-conn) (database-connect-using-token tok))
+    (make-conpool token-conn max-connections))
+#+end_src
+
+** /Function/ =get-token-conpool=
+:PROPERTIES:
+:CUSTOM_ID: function-get-token-conpool
+:END:
+
+If there's a =conpool=, get it, otherwise =#f=
+
+#+begin_src scheme :tangle no
+> (get-token-conpool "4744e6c3-dad0-48b4-ba61-5024445b3dfd")
+#<conpool #42>
+> (get-token-conpool "4744e6c3-dad0-48b4-ba61-5024445b3dfa")
+#f
+#+end_src
+
+#+begin_src scheme
+
+  (def (get-token-conpool tok) (hash-ref token-database-pools tok #f))
+
+#+end_src
+
+** /Function/ =close-token-conpool=
+:PROPERTIES:
+:CUSTOM_ID: function-close-token-conpool
+:END:
+
+#+begin_src scheme
+  (def (close-token-conpool tok)
+    (def p (get-token-conpool tok)) (when p (conpool-close p)))
+
+#+end_src
+
+
+** /Function/ =remove-token-conpool=
+:PROPERTIES:
+:CUSTOM_ID: function-remove-token-conpool
+:END:
+#+begin_src scheme
+
+  (def (remove-token-conpool tok (close #t))
+    (when close (close-token-conpool tok)) (hash-remove! token-database-pools tok))
+
+#+end_src
+
+** /Function/ =get-token-connection(tok)=
+:PROPERTIES:
+:CUSTOM_ID: function-get-token-connectiontok
+:END:
+
+#+begin_src scheme
+  (def (get-token-connection tok (timeo 10) max: (max-connections 10))
+    (def pool (let (p (hash-ref token-database-pools tok #f))
+  	      (or p (let (pp (make-token-conpool tok max-connections))
+  		      (begin0 pp
+  			(hash-put! token-database-pools tok pp))))))
+    (conpool-get pool timeo))
+    
+#+end_src
+
+
+** /Function/ =call-with-token-connection=
+:PROPERTIES:
+:CUSTOM_ID: function-call-with-token-connection
+:END:
+
+#+begin_src scheme
+  (def (call-with-token-connection tok-or-args fn)
+    (def args (if (string? tok-or-args) [tok-or-args] tok-or-args))
+    (def conn (apply get-token-connection args))
+    (def err #f)
+    (try
+     (parameterize ((current-user-database conn))
+       (fn conn))
+     (catch (e) (set! err e))
+     (finally
+      (let (p (get-token-conpool (car args)))
+        (cond
+         ((and err conn)
+  	(and p (conpool-release p conn))
+  	(raise err))
+         (err (raise err))
+         (conn (conpool-put p conn)))))))
+#+end_src
+
+
+
+
+
+* Users and Roles: United here
+:PROPERTIES:
+:CUSTOM_ID: users-and-roles-united-here
+:END:
+
+
+  #+BEGIN_SRC sql :results code :exports none
+  select pg_get_functiondef(oid) AS " "
+  from pg_proc
+  where proname = 'user_role';
+  #+END_SRC
+
+  #+begin_src sql
+
+  CREATE OR REPLACE FUNCTION public.user_role(uid integer)
+   RETURNS name
+   LANGUAGE sql
+  AS $function$
+    SELECT COALESCE(rn.rolname, mu.rolname)
+    FROM app_user LEFT JOIN pg_roles AS rn ON (rn.rolname::text = username)
+		  LEFT JOIN pg_roles AS mu
+		  ON (mu.rolname::text = 'mu_' || $1::text)
+    WHERE app_user_id = $1;
+  $function$
+
+  CREATE OR REPLACE FUNCTION public.user_role(app_user)
+   RETURNS name
+   LANGUAGE sql
+  AS $function$
+    SELECT rolname
+    FROM pg_roles
+    WHERE (rolname::text = $1.username)
+    OR (rolname::text = 'mu_' || $1.app_user_id::text)
+  $function$
+
+  #+end_src
+
+* The =login.= schema
+:PROPERTIES:
+:CUSTOM_ID: the-login-schema
+:END:
+
+There's a bunch I placed in this schema somewhere along the way. It's
+a useful "file name" I suppose.
+
+** /Function/ =login.token_role=
+:PROPERTIES:
+:CUSTOM_ID: function-logintoken_role
+:END:
+
+The front end only has a token. We need to have a database role for
+this token.
+
+#+begin_src sql
+    CREATE OR REPLACE FUNCTION login.token_user_id(UUID)
+     RETURNS int LANGUAGE SQL STABLE AS $$
+      SELECT user_id FROM login.login
+      RIGHT JOIN login.active USING (id)
+      WHERE id = $1 and until > now();
+     $$;
+
+    CREATE OR REPLACE FUNCTION login.token_role(UUID)
+     RETURNS name LANGUAGE SQL STABLE AS $$
+      SELECT user_role(login.token_user_id($1));
+    $$;
+      
+#+end_src
+
+
+#+RESULTS:
+| CREATE FUNCTION |
+|-----------------|
+| CREATE FUNCTION |
+
+** /Function/ =login.set_session_authorization=
+:PROPERTIES:
+:CUSTOM_ID: function-loginset_session_authorization
+:END:
+
+#+begin_src sql
+  CREATE OR REPLACE FUNCTION login.set_session_authorization(name)
+   RETURNS name LANGUAGE PLPGSQL AS $$
+   BEGIN
+   EXECUTE 'SET SESSION AUTHORIZATION ' || quote_literal($1);
+   RETURN $1;
+  END;
+  $$;
+#+end_src
+
+#+RESULTS:
+| CREATE FUNCTION |
+|-----------------|
+
+** /Function/ =login.set_role=
+:PROPERTIES:
+:CUSTOM_ID: function-loginset_role
+:END:
+
+#+begin_src sql
+  CREATE OR REPLACE FUNCTION login.set_role(name)
+   RETURNS name LANGUAGE PLPGSQL AS $$
+   BEGIN
+   EXECUTE 'SET ROLE  ' || quote_literal($1);
+   RETURN $1;
+  END;
+  $$;
+#+end_src
+
+#+RESULTS:
+| CREATE FUNCTION |
+|-----------------|
+
+* Applcation Login uses 
+:PROPERTIES:
+:CUSTOM_ID: applcation-login-uses
+:END:
+#+begin_src scheme :tangle login/database.ss 
+  (import ./conf :std/text/json :std/db/dbi :std/db/postgresql)
+  (export #t)
+
+  (def (database-connect)
+     (let* ((db (conf-value '(database master)))
+  	  (host (conf-value 'host db))
+            (port (conf-value 'port db))
+            (dbname (conf-value 'database db))
+            (u (conf-value 'username db))
+            (p (conf-value 'password db)))
+       (sql-connect postgresql-connect host: host port: port user: u passwd: p db: dbname)))
+
+
+  (def (authenticate username password)
+    (def db (database-connect))
+    (let (res (car (sql-eval-query db "SELECT login.login_user($1, $2)"
+  				 username password)))
+      (sql-close db)
+      (if (not res) res
+  	(call-with-input-string res read-json))))
+
+  ;;; `create-reset-token` => (full-name username token) || #f
+  (def (create-reset-token email)
+    (def db (database-connect))
+    (let (res (sql-eval-query
+  	     db "SELECT person_short_name(person_id), username,
+       login.\"create\"(app_user_id)
+     FROM app_user RIGHT JOIN person USING (person_id)
+     WHERE email_address = $1" email))
+      (if (null? res) #f (vector->list (car res)))))
+
+  (def (reset-password tok pw)
+    (def db (database-connect))
+    (let (res (sql-eval-query db "SELECT login.change_password($1, $2)" tok pw))
+      (if (null? res) #f (car res))))
+      
+#+end_src
+
+
+* HACKING
+:PROPERTIES:
+:CUSTOM_ID: hacking
+:END:
+
+
+  - [[info:org#Using Header Arguments][org#Using Header Arguments]]
+
+#+begin_src scheme
+  (import :ecm/login/conf :std/text/json :std/db/dbi :std/db/postgresql :std/db/conpool :std/sugar)
+
+  (update-conf)
+#+end_src
