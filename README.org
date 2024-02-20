@@ -1,0 +1,80 @@
+#+TITLE: Electronic Claims Manager : Monorepo
+
+ECM is a platform primarily for Adjusters, Examiners, and other
+Insurance Claim & Risk Management Services.
+
+It's composed of many parts, some of which are indepenently
+useful. Monorepo time!
+
+* ECM SPA
+
+There's a repository and "package" for the foundations of a Single
+Page app that acts like a multipage one [[https://github.com/Aufin/ecm-spa][here.]]
+
+We want to incorporate it but also keep it free. This is where a
+subtree comes in.
+
+** Subtree and Subfolder
+
+I only want the =./spa/= folder as a part of the subtree.
+
+This is doable!
+
+ 1) Add the remote
+
+    #+begin_src sh
+      git remote add ecm-spa git@github.com:Aufin/ecm-spa.git
+    #+end_src
+
+ 2) Checkout remote main/master as a branch
+
+    #+begin_src sh
+      git fetch ecm-spa ; git checkout -b ecm-spa-main ecm-spa/main
+    #+end_src
+
+ 3) Split the subtree into another branch
+
+    #+begin_src sh
+      git subtree split -P spa -b ecm-spa-sub --rejoin --annotate='(ecm-spa) '
+    #+end_src
+
+ 4) Back to the local main/master
+
+    #+begin_src sh
+      git checkout main
+    #+end_src
+
+ 5) Make the subtree from that subtree branch
+
+    #+begin_src sh
+      git subtree add -P src/spa ecm-spa-sub
+    #+end_src
+
+
+ Now trying to propagate a change from this repo make to the master one.
+
+   #+begin_src sh
+     echo This is a subtree from a subtree > src/SPA/README.org
+     git add src/spa/README.org
+     git commit -m "Trying a subtree->subtree->main propa"
+   #+end_src
+
+   1) Push the subtree back to the other split subtree
+
+      #+begin_src sh
+	git subtree push -P src/spa . ecm-spa-sub
+      #+end_src
+
+   2) Checkout the main and pull!
+
+      #+begin_src sh
+	git branch ecm-spa-main -u ecm-spa/main
+	git checkout ecm-spa-main
+	git subtree pull -P spa/ . ecm-spa-sub --squash
+      #+end_src
+
+   3) Push it back upstream
+
+      #+begin_src sh
+	git push ecm-spa HEAD:main
+      #+end_src
