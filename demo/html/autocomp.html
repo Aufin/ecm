@@ -1,0 +1,123 @@
+<div>
+
+    <div> This is the autocomp </div>
+<form autocomplete="off">
+<div id="result"></div>
+    <div class="subtask-li">
+      <span class="main-tlist"> 
+        <span class="icon-taskListing"></span> 
+        <span class="subselectedList"><input type="text" name="q" id="q" onKeyUp="showResults(this.value)" /></span> 
+        <span uk-icon="chevron-down"></Span>
+      <ul class="subtask-pick">
+        <li><a href="javascript:;">General issues</a></li>
+        <li><a href="javascript:;">Default</a></li>
+        <li><a href="javascript:;">Android Games Issues</a></li>
+        <li><a href="javascript:;">pt issues</a></li>
+        <li><a href="javascript:;">Server Development</a></li>
+        <li><a href="javascript:;">Resource Integration</a></li>
+        <li><a href="javascript:;">Server Infrastructure</a></li>
+      </ul>
+    </div>
+</form>
+
+    <script> alert('here');
+ //  $(document).on("click",".main-tlist",function(){
+  //  $('.subtask-pick').toggle();
+  //  });
+
+ //   $('.subtask-pick').scroll(function () {
+ //         if ($(this)[0].scrollHeight - $(this).scrollTop() <=  $(this).outerHeight()) {
+ //               alert("end of scroll");
+  //            // You can perform as you want
+
+    //      }
+   // });
+
+   </script>
+
+    <style>
+        .subtask-li {
+          border: 1px solid #dfe8f1;
+          cursor: pointer;
+          position: relative;
+          background: rgba(0, 0, 0, 0) linear-gradient(to bottom, rgba(255, 255, 255, 1) 0%, rgba(246, 246, 246, 1) 100%) repeat scroll 0 0;
+          border-radius: 3px;
+          float: left;
+
+          left: 5px;
+          padding: 5px;
+          top: 6px;
+      }
+
+
+      .subtask-pick{
+         background-clip: padding-box;
+          background-color: #fff;
+          border: 1px solid #dfe8f1;
+          border-radius: 3px;
+          box-shadow: 0 1px 7px 2px rgba(135, 158, 171, 0.2);
+          display: none;
+          list-style: outside none none;
+          padding: 0 0 10px;
+          position: absolute;
+          z-index: 9; 
+          float: left;
+         width: 220px;
+          list-style: outside none none; height:220px; overflow:auto;
+      }
+      .icon-taskListing {
+          display: inline-block;
+          vertical-align: middle;
+      }
+      .subselectedList {
+          overflow: hidden;
+          padding: 0 5px;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          width: 116px;
+      }
+      ul.subtask-pick li {
+        float: none;
+        display: block;
+        clear: both;
+
+        position: relative;
+      }
+      ul.subtask-pick li a {
+        padding: .9em 1em .9em .8em;
+        position: relative;
+          clear: both;
+        cursor: pointer;
+        display: block;
+
+        white-space: nowrap;
+         text-overflow: ellipsis;
+        overflow: hidden;
+      }
+      ul.subtask-pick li a:hover {
+        background: none repeat scroll 0 0 #eff4f6;
+        cursor: pointer;
+      }
+      a {
+        text-decoration: none;
+        outline: 0;
+        color: #4c4c4c;
+      }
+
+      </style>
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
