@@ -1,0 +1,234 @@
+:PROPERTIES:
+:ID:       efb7bfba-3b5b-402b-9b1a-ccfb7c3084e3
+:END:
+#+title: Database
+
+ECM really loves the database. It runs on postgresql.
+
+* Claims claims claims!
+
+[[id:cd17ab6d-13c3-4fa9-9d2f-4e6bd1466ae0][Claims]]
+
+* TODO The API shared filesystem
+
+Make the [[id:352466C1-6818-46C1-A8C1-D694CA897770][Common Lisp Server]] use a different directory that is sshfsd
+
+For now, on the db machine
+#+begin_src sh
+  mkdir /tmp/ecm-bordereau-csv/
+  chmod a+rwx /tmp/ecm-bordereau-csv
+#+end_src
+
+and on the web servers
+
+#+begin_src sh
+  mkdir /tmp/ecm-bordereau-csv/
+  chmod a+rwx /tmp/ecm-bordereau-csv
+  sudo sshfs -o allow_other,default_permissions drewc@db.ecm.lan:/tmp/ecm-bordereau-csv /tmp/ecm-bordereau-csv
+#+end_src
+
+* Transactions
+
+[[id:de30a70d-a795-48ee-92f7-936426ddf690][Transactions]]
+* Configuration
+
+This is what's needed to keep things local.
+
+[[file:/ssh:drewc@db.ecm.lan|sudo:root@db.ecm.lan:/etc/postgresql/16/main/postgresql.conf::data_directory = '/var/lib/postgresql/16/main' # use data in another directory][db.ecm.lan]]
+
+#+begin_src conf :tangle /ssh:drewc@db.ecm.lan|sudo:root@db.ecm.lan:/etc/postgresql/16/main/conf.d/ecm.conf
+  max_connections = 1000			# (change requires restart)
+  listen_addresses = '*'		# what IP address(es) to listen on;
+  password_encryption = md5
+  hba_file = '/srv/ecm/postgresql/etc/pg_hba.conf'	# host-based authentication file
+  ssl_ca_file = '/srv/ecm/postgresql/etc/root.crt'
+ ident_file = '/srv/ecm/postgresql/etc/pg_ident.conf'	# ident configuration file
+#+end_src
+
+** =pg_ident.conf=
+
+#+begin_src conf  :tangle /ssh:drewc@db.ecm.lan|sudo:ecm@db.ecm.lan:/srv/ecm/postgresql/etc/pg_ident.conf
+  # MAPNAME       SYSTEM-USERNAME         PG-USERNAME
+  cert           /^ecm\/user\/(.*)$         \1
+
+#+end_src
+** =pg_hba.conf= : Access Control
+
+#+begin_src sh
+  sudo mkdir -p /srv/ecm/postgresql/etc
+  sudo chmod -R a+r /srv/ecm
+  sudo chown -R postgres:postgres /srv/ecm/postgresql
+  sudo chmod -R g+rw /srv/ecm/postgresql/etc
+  sudo adduser ecm postgres
+#+end_src
+
+Note that we trust no ssl connections from hosts local because users
+have roles and this is easier than =SET='ing them.
+
+#+begin_src conf  :tangle /ssh:drewc@db.ecm.lan|sudo:ecm@db.ecm.lan:/srv/ecm/postgresql/etc/pg_hba.conf
+  local   all             postgres                                peer
+
+  # TYPE  DATABASE        USER            ADDRESS                 METHOD
+
+  # "local" is for Unix domain socket connections only
+  local   all             all                                     peer
+  # IPv4 local connections:
+  hostssl    all             all             127.0.0.1/32            md5
+  hostnossl   all		all		127.0.0.1/32 trust
+  # IPv6 local connections:
+  host    all             all             ::1/128                 md5
+
+  hostssl    all       all   0.0.0.0/0    cert map=cert
+
+  # The cloud server(s2
+  hostnossl   all		all		10.42.0.12/32 trust
+
+  hostssl            all       all  71.19.249.26/32    cert map=cert
+  hostnossl            all       all  71.19.249.26/32  reject
+
+  host    all             all             76.73.96.2/32            md5
+  host    all             all             50.7.166.0/0            md5
+  host    all             all             174.7.132.154/32            md5
+
+  
+  host    replication     all             174.7.128.78/32        md5
+  host    replication     all             174.114.179.56/32        md5
+  host    replication     all             0.0.0.0/0        md5
+
+  host replication all 172.31.18.123/32 md5
+  host replication all 54.201.97.242/32 md5
+#+end_src
+
+
+
+
+** =root.crt= because the old CL uses SSL
+
+
+#+begin_src text :tangle /ssh:drewc@db.ecm.lan|sudo:ecm@db.ecm.lan:/srv/ecm/postgresql/etc/root.crt
+  -----BEGIN CERTIFICATE-----
+MIIC+TCCAeGgAwIBAgIJAJkFjscdsNP5MA0GCSqGSIb3DQEBCwUAMBMxETAPBgNV
+BAMMCGVjbS9yb290MB4XDTE5MDIyMzE5NDI1NFoXDTI5MDIyMDE5NDI1NFowEzER
+MA8GA1UEAwwIZWNtL3Jvb3QwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIB
+AQCf5MLBvo9BPxltaX6sLEhzWCMTifnpX9HlXVlCX7JPaJcaOLdXikp+VNmRpSRg
+pNKrmXiqD5VkNfDGd6egQBEzKdIh5NYVmIQ8B7d/p0l9Q5Wv6yeW2ekuWQMgZ0v5
+vxNLlLtN7oYGOBCt+iShPlO21FsSipz3eswwlPGApczKDAJ3CFUgbyU1Qes8na/w
+deXFLzSRh1E/AYsZqKXgBWfZJPkciMlmMXqBmVeGHLh2la+Bdj2NrHE5AUDRovry
+c7cJWEruOefdF/+hOgbNvoM8uinJ8W/ZheJDVoYYIcAlavmq4PehpRRpdxRSCT+i
+UItKf2E5l9TmhLBouk4yx8G1AgMBAAGjUDBOMB0GA1UdDgQWBBSkyLqWlcyg6c1n
+/d2BYEPNvwCHlDAfBgNVHSMEGDAWgBSkyLqWlcyg6c1n/d2BYEPNvwCHlDAMBgNV
+HRMEBTADAQH/MA0GCSqGSIb3DQEBCwUAA4IBAQCKHmzy71/XVHpbu4PXD8kdtSXq
+B4w2PZ6yx8KAUMB2sgCqDHN1x+nmBHw1CHOoiWo0RRBU1gXXbVH4+NigTOaidcx+
+rzpDrqUm6AxfogAj66+1YtCc4Q9lbk7gpVzGSc8JiXRF2IM6njN+6X1PsjFjAOrO
+DH/EOzIj4nSL0l6ZKKpMo8+lLTSlYqmoPvmv5i0Bqe1BO6pXuw5BZjl9/Cm+/jai
+SCQhC6BYUCk0NZT3mDtQfMkTPff9P0tCKuMYL7WRO7+x0zVHt8OJIFM73+yNNInc
+X1Ig+hBD83N0DlETqg3CszrawQ0t7wMrJHgWHimad6u0/lFaYgHEoUss7BWV
+-----END CERTIFICATE-----
+#+end_src
+* Installation
+
+Right now the DB machine uses Ubuntu because of the plsh
+
+#+begin_src sh
+# Create the file repository configuration:
+sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+# Import the repository signing key:
+wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+
+# Update the package lists:
+sudo apt-get update
+
+# Install the latest version of PostgreSQL.
+# If you want a specific version, use 'postgresql-12' or similar instead of 'postgresql':
+sudo apt-get -y install postgresql-16 postgresql-16-plsh
+#+end_src
+
+** TODO Make it work under GuixSD
+
+#+begin_src sql
+SELECT * FROM pg_extension;
+#+end_src
+
+Guix has [[info:guix#Database Services][guix#Database Services]]
+
+#+begin_src scheme
+  (service postgresql-service-type
+                (postgresql-configuration
+                 (postgresql postgresql-16)))
+
+
+#+end_src
+
+* Update/Upgrade/Clone
+
+
+#+begin_src sh
+  export DB_DUMP="db-dump_`date --utc`"
+  psql "user=maxclaims host=ecm.maxwellclaims.net dbname=maxclaims sslmode=disable" -c  "SELECT pg_start_backup('dump_new_version')"
+  cd /tmp
+  ssh ecm@maxbuntu.lan pg_dumpall -v  --clean  --host=localhost --username=maxclaims > "$DB_DUMP"
+  psql "user=maxclaims host=ecm.maxwellclaims.net dbname=maxclaims  sslmode=disable" -c  "SELECT pg_stop_backup()"
+
+#+end_src
+
+#+begin_src sh
+
+
+  sudo apt-get purge postgresql-16
+  sudo apt-get -y install postgresql-16 postgresql-16-plsh
+  chmod  777  "$DB_DUMP"
+  sudo --user postgres psql -f "$DB_DUMP" postgres
+#+end_src
+
+* Replication
+
+
+
+* Fixes
+#+begin_src sql
+      CREATE OR REPLACE FUNCTION public.refresh_person_name()
+     RETURNS trigger                                       
+     LANGUAGE plpgsql                                      
+    AS $function$                                          
+          BEGIN                                            
+           REFRESH MATERIALIZED VIEW person_name;          
+           RETURN NEW;                                     
+          END;                                             
+         $function$
+    SECURITY DEFINER ;
+
+  DO
+  $$
+  DECLARE
+     rec   record;
+  BEGIN
+     FOR rec IN
+        SELECT 'mu_' || app_user_id as rolname
+        FROM   app_user
+        WHERE  can_edit
+     LOOP
+        EXECUTE ' GRANT mr_insert TO ' || rec.rolname ;
+        EXECUTE ' GRANT mr_update TO ' || rec.rolname ;
+     END LOOP;
+  END
+  $$;
+  
+  DO
+  $$
+  DECLARE
+     rec   record;
+  BEGIN
+     FOR rec IN
+        SELECT *
+        FROM   pg_roles
+        WHERE  rolname LIKE 'mu_%'
+     LOOP
+        EXECUTE ' GRANT mr_read TO ' || rec.rolname ;
+     END LOOP;
+  END
+  $$;
+
+
+
+#+end_src
+

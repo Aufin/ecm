@@ -1,0 +1,61 @@
+#+TITLE: Claims!
+
+Claims are everything.
+
+This is where things are laid out in a good fashion.
+
+#+begin_src js :tangle claim.js
+  function Claim(props = {}) {
+      this.object = Object.assign({}, props)
+      return this;
+  }
+
+  Claim.proxy = function(name, args = {}) {
+    const prop = Object.assign({
+        get() { return this.object[name] },
+        set(v) { this.object[name] = v}
+    }, args)
+      
+      Object.defineProperty(Claim.prototype, name, prop)
+  }
+
+  Claim.proxies = function(...names) {
+      [...names].forEach(p => Claim.proxy(p))
+  }
+
+  Claim.proxies('examiner')
+
+  Object.defineProperty(Claim.prototype, 'claim_id', {
+      get() { return this.object.claim_id || this.object._id },
+      set(id) { this.object.claim_id = id }
+  })
+
+  Object.defineProperty(Claim.prototype, 'status', {
+      get() { return this.object.status },
+      set(id) { this.object.status = id }
+  })
+  Object.defineProperty(Claim.prototype, 'date_of_loss', {
+      get() { return this.object.date_of_loss },
+      set(id) { this.object.date_of_loss = id }
+  })
+
+  Object.defineProperty(Claim.prototype, 'policy', {
+          get() { return new Policy(this.object.risk.policy) },
+          set(id) { this.object.risk.policy = id }
+      })
+
+  Object.defineProperty(Claim.prototype, 'contract', {
+          get() { return new Contract(this.object.risk.contract) },
+          set(id) { this.object.risk.contract = id }
+      })
+
+
+
+
+
+
+
+#+end_src
+#+begin_src scheme :tangle claim.ss
+#+end_src
+

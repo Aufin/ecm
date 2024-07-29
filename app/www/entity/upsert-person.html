@@ -1,0 +1,67 @@
+<div>
+  <form>
+        <div class="uk-form-controls uk-form-controls-text">
+      <label><input class="uk-radio" value="person" type="radio" name="type" checked>&nbsp;Person</label>
+      <label><input class="uk-radio" value="company" type="radio" name="type"&nbsp;>Company or Group</label>
+	</div>
+	    <hr>
+    <div class="uk-child-width-1-2" uk-grid="masonry: pack"
+	 style="margin-left:unset"`>
+      <div  class="uk-flex uk-flex-center uk-flex-middle">
+
+	<style>
+	  [data-person-name] input {
+
+	    margin-bottom: -1px !important;
+	    margin-right: -1px !important;
+	     margin-bottom: -1px;
+	  }
+
+	  .uk-margin-remove { 
+	  }
+	</style>
+	
+
+	<div class="uk-width-expand">
+	  <h5> Name: </h5>
+
+	  <div data-company-name  style='display: none' class="">
+	    <input 
+	      class="uk-input"
+	      name="company_name" placeholder="Company Name"
+	      ></div>
+
+        <div uk-grid data-person-name class="uk-grid-match uk-grid-small uk-margin-remove">
+	  <input class="uk-input uk-width-auto uk-margin-remove"
+		 size="5" name="title" placeholder="Title">
+	  <input class="uk-input uk-width-medium@s uk-margin-remove"  name="first_name" placeholder="First Name" uk-tooltip="First Name">
+	  <input class="uk-input uk-width-small@m uk-width-medium@s uk-margin-remove" name="middle_name"  placeholder="Middle Name" uk-tooltip="Middle Name">
+	  <input class="uk-input uk-width-medium uk-margin-remove" name="last_name" placeholder="Last Name" uk-tooltip="Last Name">
+      <input class="uk-input  uk-width-small uk-margin-remove" size="6" name="suffix" placeholder="Suffix">
+      <input class="uk-input uk-margin-remove uk-width-large@s" name="nick" placeholder="Company or Group or Nickname">
+	</div>
+
+	</div>
+      </div>
+      <div>
+	<h5> Address: </h5>
+      <div class="uk-flex uk-align-center uk-flex-center uk-flex-middle" >
+	<div data-address>
+	  
+
+	<input class="uk-input" name="address1" placeholder="Address Line 1"> <br>
+	<input class="uk-input" name="address2" placeholder="Address Line 2"><br>
+	<input class="uk-input" name="city" placeholder="City">
+	<select class="uk-input" name="province" placeholder="province"></select>
+	<br>
+	<select class="uk-input" name="country" placeholder="Country"></select>
+	<input class="uk-input" name="postal_code" placeholder="Postal Code">
+      
+      </div> 
+    </div>
+      </div>
+    </div>
+  </form>
+        <br>
+	<div data-ecm-error></div>
+</div>

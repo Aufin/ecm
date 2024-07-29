@@ -1,0 +1,620 @@
+
+a#+PROPERTY: header-args:sql :engine postgres :cmdline "\"host=db.ecm.lan port=5432 user=maxclaims dbname=maxclaims\""
+#+PROPERTY: header-args:sql :engine postgres :cmdline "\"host=maxbakuntu.lan port=5432 user=maxclaims dbname=maxclaims\""
+
+* Table Of Contents
+:PROPERTIES:
+:TOC:      :include siblings :depth 4 :ignore (this)
+:END:
+:CONTENTS:
+- [[#the-diary_entry-table][The diary_entry table]]
+  - [[#claims-groups-and-diary-duplication][Claims groups and diary duplication]]
+    - [[#simplifiy-when-the-front-end-looks-at-the-view][Simplifiy when the front end looks at the view.]]
+  - [[#update-the-diary_view-materialized-backers][Update the diary_view materialized backers]]
+- [[#the-diary_view-and-friends][The diary_view and friends]]
+  - [[#materialized-views-diary_open_view_mat][Materialized Views: diary_(open_)view_mat]]
+  - [[#the-dirtyclean-notification-and-janitor][The dirty/clean notification and janitor.]]
+  - [[#the-actual-diary_view-view][The actual diary_view view]]
+  - [[#time-to-upsertdiary-json-with-functions][Time to upsert(diary*, json) with functions]]
+  - [[#alter-materialized-views-a-bunch][Alter Materialized views a bunch]]
+:END:
+
+#+begin_src sql
+  select pg_read_file('/etc/hostname') as hostname;
+#+end_src
+
+#+RESULTS:
+| hostname  |
+|-----------|
+| maxdbuntu |
+|           |
+
+* The =diary_entry= table
+:PROPERTIES:
+:CUSTOM_ID: the-diary_entry-table
+:END:
+
+** Claims groups and diary duplication
+:PROPERTIES:
+:CUSTOM_ID: claims-groups-and-diary-duplication
+:END:
+
+#+begin_src sql
+    ALTER TABLE diary_entry
+     ADD COLUMN leader_id INT REFERENCES diary_entry(diary_entry_id);
+#+end_src
+
+#+RESULTS:
+| ALTER TABLE |
+|-------------|
+
+
+
+
+#+begin_src sql
+  CREATE OR REPLACE FUNCTION diary_entry_primary()
+  RETURNS trigger LANGUAGE plpgsql AS $$
+   DECLARE
+    leader BOOLEAN := false;
+   BEGIN
+
+    SELECT true INTO leader FROM claim WHERE group_leader_id = NEW.claim_id LIMIT 1;
+    
+    IF (TG_OP = 'INSERT' AND leader) THEN
+      CREATE TEMP TABLE IF NOT EXISTS _newde  ON COMMIT DROP AS
+      SELECT diary_entry_id AS leader_id, app_user_id, action_date, processed, note, title
+       FROM 
+      (SELECT (NEW).*) _n;
+
+
+     INSERT INTO diary_entry(claim_id, leader_id, app_user_id, action_date, processed, note, title)
+     (SELECT claim_id, _newde.* FROM claim LEFT JOIN _newde ON (TRUE)
+      WHERE claim.group_leader_id = NEW.claim_id);
+
+   ELSIF (TG_OP = 'UPDATE' AND leader) THEN
+      UPDATE diary_entry
+       SET note = NEW.note,
+           title = NEW.title,
+  	 processed = NEW.processed,
+  	 app_user_id = NEW.app_user_id,
+  	 action_date = New.action_date
+       WHERE leader_id = NEW.diary_entry_id;
+    END IF;
+
+    RETURN NEW;
+    END; $$;
+     
+
+     CREATE OR REPLACE TRIGGER diary_entry_primary
+     AFTER INSERT OR UPDATE ON diary_entry
+     FOR EACH ROW EXECUTE PROCEDURE diary_entry_primary();
+
+     -- DROP TRIGGER diary_entry_primary ON diary_entry;
+
+#+end_src
+
+#+RESULTS:
+| CREATE FUNCTION |
+|-----------------|
+| CREATE TRIGGER  |
+
+#+begin_src sql
+      CREATE OR REPLACE FUNCTION _foo(diary_entry) RETURNS JSON LANGUAGE PLPGSQL AS $$
+    DECLARE 
+     NEW diary_entry; ret json;
+    BEGIN
+    NEW := $1;
+
+    CREATE TEMP TABLE _bar ON COMMIT DROP AS
+     (SELECT (NEW).*);
+
+      ALTER TABLE _bar DROP COLUMN diary_entry_id;
+      ALTER TABLE _bar DROP COLUMN claim_id;
+
+    CREATE TEMP TABLE _foo ON COMMIT DROP AS 
+     (SELECT claim_id, _bar.* FROM claim LEFT JOIN _bar ON (TRUE)
+      WHERE claim.group_leader_id = NEW.claim_id);
+
+     INSERT INTO diary_entry(claim_id, app_user_id, action_date, processed, note, title)
+      SELECT * FROM _foo;
+
+  SELECT json_agg(to_json((_foo))) INTO ret FROM _foo; RETURN ret;
+    END; $$;
+#+end_src
+
+#+RESULTS:
+| CREATE FUNCTION |
+|-----------------|
+
+
+#+begin_src sql
+  SELECT _foo(d.*) FROM diary_entry d WHERE claim_id = 1234  AND NOT processed LIMIT 1;
+#+end_src
+#+RESULTS:
+| _foo                                                                                                                                                                                                                                                                       |
+|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| [{"claim_id":69073,"app_user_id":1,"action_date":"2013-02-14","processed":false,"note":"This is a test of a diary entry","title":""}, {"claim_id":69074,"app_user_id":1,"action_date":"2013-02-14","processed":false,"note":"This is a test of a diary entry","title":""}] |
+
+
+*** TODO Simplifiy when the front end looks at the view.
+:PROPERTIES:
+:CUSTOM_ID: simplifiy-when-the-front-end-looks-at-the-view
+:END:
+
+** Update the =diary_view= materialized backers
+:PROPERTIES:
+:CUSTOM_ID: update-the-diary_view-materialized-backers
+:END:
+
+#+begin_src sql
+    CREATE OR REPLACE FUNCTION diary_entry_update_view_mat()
+    RETURNS trigger LANGUAGE plpgsql AS $$
+     DECLARE
+     BEGIN
+        UPDATE diary_view_dirty dvd SET dirty = now()
+        WHERE dvd.dirty = clean;
+      RETURN NEW;
+      END; $$;
+
+     CREATE OR REPLACE TRIGGER diary_entry_update_view_mat
+     AFTER INSERT OR UPDATE OR DELETE ON diary_entry
+     FOR EACH ROW EXECUTE PROCEDURE diary_entry_update_view_mat();
+
+     -- DROP TRIGGER diary_entry_update_view_mat ON diary_entry;
+        
+#+end_src
+
+#+RESULTS:
+| CREATE FUNCTION |
+|-----------------|
+| CREATE TRIGGER  |
+
+
+* The =diary_view= and friends
+:PROPERTIES:
+:CUSTOM_ID: the-diary_view-and-friends
+:END:
+
+** Materialized Views: =diary_(open_)view_mat=
+:PROPERTIES:
+:CUSTOM_ID: materialized-views-diary_open_view_mat
+:END:
+
+#+begin_src sql :noweb-ref diary-mat-views
+   -- DROP MATERIALIZED VIEW IF EXISTS diary_view_mat CASCADE;
+   -- DROP MATERIALIZED VIEW IF EXISTS diary_open_view_mat CASCADE;
+  DO $$DECLARE
+    _q TEXT;
+  BEGIN
+  _q := 'SELECT diary_id, claim_id, (claim).status, note, date,
+         up.short_name AS user_name, entry.user_id, closed,
+        -- (SELECT array_agg(json_build_object(
+        --   ''claim_id'', _d.claim_id, ''diary_id'', _d.diary_entry_id))
+        --  FROM diary_entry _d WHERE (_d.leader_id = diary_id)) AS members,
+    contract_id, (contract).contract_number,
+    policy_id, (policy).policy_number,
+    (policy).insured_id, (insured).full_name AS insured_name,
+    risk_id, (risk).risk_type_name AS risk_type
+
+   FROM (SELECT d.diary_entry_id AS diary_id,
+          d.claim_id, d.app_user_id AS user_id,
+          d.note,
+          d.processed AS closed,
+          COALESCE(max(de.defer_date), d.action_date) AS date
+    FROM diary_entry d
+    LEFT JOIN defer_diary_entry de USING (diary_entry_id)
+    WHERE leader_id IS NULL
+    GROUP BY d.diary_entry_id
+   ) entry LEFT JOIN claim_view USING (claim_id)
+    LEFT JOIN person insured ON ((policy).insured_id = insured.person_id)
+    LEFT JOIN app_user u ON (entry.user_id = u.app_user_id)
+    LEFT JOIN person up ON (u.person_id = up.person_id)';
+
+  EXECUTE 'CREATE MATERIALIZED VIEW IF NOT EXISTS diary_view_mat AS ' || _q || ';';
+  EXECUTE 'CREATE MATERIALIZED VIEW IF NOT EXISTS diary_open_view_mat AS ' || _q ||
+  	' WHERE NOT closed;';
+
+  EXECUTE 'CREATE OR REPLACE FUNCTION diary_view(_diary_id INT)
+           RETURNS diary_view_mat LANGUAGE SQL AS $a$ ' || _q || ' WHERE diary_id = $1; $a$;';
+  END; $$;
+
+  CREATE UNIQUE INDEX IF NOT EXISTS dv_diary_id ON diary_view_mat (diary_id);
+  CREATE UNIQUE INDEX IF NOT EXISTS dv_open_diary_id ON diary_open_view_mat (diary_id);
+  CREATE INDEX IF NOT EXISTS dv_open_diary_date ON diary_open_view_mat (date);
+  CREATE INDEX IF NOT EXISTS dv_diary_date ON diary_view_mat (date);
+  CREATE INDEX IF NOT EXISTS dv_open_diary_status ON diary_open_view_mat (closed);
+  CREATE INDEX IF NOT EXISTS dv_diary_status ON diary_view_mat (closed);
+
+  CREATE INDEX IF NOT EXISTS dv_open_user_id ON diary_open_view_mat (user_id);
+  CREATE INDEX IF NOT EXISTS dv_user_id ON diary_view_mat (user_id);
+    
+#+end_src
+
+** The dirty/clean notification and janitor.
+:PROPERTIES:
+:CUSTOM_ID: the-dirtyclean-notification-and-janitor
+:END:
+
+#+begin_src sql :noweb-ref diary-view-clean
+    CREATE TABLE IF NOT EXISTS diary_view_dirty (
+       id int GENERATED ALWAYS AS (1) STORED UNIQUE,
+       clean TIMESTAMP,
+       dirty TIMESTAMP
+     );
+
+     INSERT INTO diary_view_dirty(clean, dirty)
+      VALUES (now(), now()) ON CONFLICT DO NOTHING;
+
+     CREATE OR REPLACE FUNCTION diary_view_clean(INTERVAL)
+     RETURNS BOOLEAN LANGUAGE PLPGSQL AS $$
+     DECLARE
+      dirt BOOL;
+      get_dirty BOOL;
+     BEGIN
+     SELECT (clean != dirty AND (now() - dirty) > $1)
+      INTO dirt FROM diary_view_dirty;
+
+     SELECT (clean != dirty)
+      INTO get_dirty FROM diary_view_dirty;
+
+      IF (get_dirty) THEN
+       REFRESH MATERIALIZED VIEW CONCURRENTLY diary_open_view_mat;
+      END IF;
+
+     IF (dirt) THEN 
+      REFRESH MATERIALIZED VIEW CONCURRENTLY diary_view_mat;
+      UPDATE diary_view_dirty SET clean = now(), dirty = now();
+     END IF;
+
+     RETURN dirt;
+     END; $$;
+
+     CREATE OR REPLACE FUNCTION diary_view_clean()
+     RETURNS SETOF diary_open_view_mat LANGUAGE PLPGSQL AS $$
+     DECLARE
+      dirt BOOL;
+     BEGIN
+     SELECT (clean != dirty AND (now() - dirty) > INTERVAL '2 min')
+      INTO dirt FROM diary_view_dirty;
+
+      
+
+     IF (dirt) THEN 
+      REFRESH MATERIALIZED VIEW CONCURRENTLY diary_view_mat;
+      REFRESH MATERIALIZED VIEW CONCURRENTLY diary_open_view_mat;
+     UPDATE diary_view_dirty SET clean = now(), dirty = now();
+     -- ELSE
+     --   RETURN  QUERY SELECT  (diary_view(diary_id)).*
+     --   FROM diary_view_mat dvm
+     --  WHERE NOT closed AND NOT EXISTS (SELECT true FROM diary_open_view_mat doV WHERE doV.diary_id = dvm.diary_id);
+     END IF;
+     END; $$;
+
+
+#+end_src
+
+#+RESULTS:
+| CREATE TABLE    |
+|-----------------|
+| INSERT 0 0      |
+| CREATE FUNCTION |
+| CREATE FUNCTION |
+| CREATE FUNCTION |
+| CREATE VIEW     |
+| CREATE TRIGGER  |
+
+
+Testing ... why so slow? Ah! If the big materialized view is not
+updated in time the second union makes a great big query.
+
+#+begin_src sql
+  CREATE OR REPLACE VIEW ddiary_view AS 
+    --SELECT * FROM diary_view_clean() UNION
+    SELECT * FROM diary_open_view_mat
+     UNION
+     SELECT (diary_view(diary_id)).*
+       FROM diary_view_mat dvm
+      WHERE NOT closed
+     --  AND NOT EXISTS
+    --     (SELECT true FROM diary_open_view_mat doV
+    --      WHERE doV.diary_id = dvm.diary_id LIMIT 1)
+
+    UNION SELECT *
+    FROM diary_view_mat dvm WHERE closed AND NOT EXISTS (SELECT true FROM diary_open_view_mat doV WHERE doV.diary_id = dvm.diary_id)
+    ;
+
+#+end_src
+#+RESULTS:
+| CREATE VIEW |
+|-------------|
+** Datatable functyion
+
+#+begin_src sql
+  CREATE OR REPLACE FUNCTION diary_view_datatable(params JSON)
+  RETURNS JSON LANGUAGE PLPGSQL AS $$
+  DECLARE
+  pending BOOL := true;
+  finished BOOL := false;
+  user_id INT;
+  fixed JSON;
+  value JSON;
+  _where TEXT := 'WHERE true';
+  BEGIN
+
+  PERFORM diary_view_clean('3 min');
+
+  SELECT  $1 #>> '{search,fixed}' INTO fixed;
+
+  -- * The Open and/or Closed fixed search
+
+   IF (fixed IS NOT NULL) THEN
+    FOR value IN SELECT * FROM json_array_elements(fixed)
+    LOOP 
+     IF (value->>'name' = 'pending')
+      THEN pending := (value->>'term')::bool;
+     ELSIF (value->>'name' = 'finished')
+      THEN finished := (value->>'term')::bool;
+     END IF;
+     END LOOP; 
+
+    END IF;
+  	      
+    -- RAISE NOTICE 'P&F : % %', pending, finished;
+
+    IF (pending AND finished) THEN
+      _where := 'WHERE true';
+    ELSIF (pending) THEN
+       _where := 'WHERE NOT closed';
+    ELSIF (finished) THEN
+       _where := 'WHERE closed';
+    ELSE _where := 'WHERE false';
+    END IF;
+
+  -- * The `user_id` fixed search
+
+   IF (fixed IS NOT NULL) THEN
+    FOR value IN SELECT * FROM json_array_elements(fixed)
+     LOOP 
+      IF (value->>'name' = 'user_id')
+       THEN user_id := (value->>'term')::int;
+      END IF;
+     END LOOP; 
+   END IF;
+  	 
+   IF (user_id IS NOT NULL) THEN
+      _where := _where || format (' AND user_id = %s', user_id);
+   END IF;
+   
+   RETURN DataTables_query('
+        SELECT * ',' FROM diary_view ' || _where , $1);
+
+  END; $$;
+
+
+#+end_src
+** The actual =diary_view= view
+:PROPERTIES:
+:CUSTOM_ID: the-actual-diary_view-view
+:END:
+
+
+#+begin_src sql :noweb-ref diary-view
+  CREATE OR REPLACE VIEW diary_view AS 
+    --SELECT * FROM diary_view_clean() UNION
+    SELECT * FROM diary_open_view_mat
+    UNION
+    SELECT  (diary_view(diary_id)
+             -- SELECT json_populate_record(null::diary_view_mat,
+     --         json_object_agg((obj).key,
+     --                         CASE WHEN (obj).key = 'closed' THEN 'true'::json ELSE (obj).value END))
+     -- 	   FROM (SELECT json_each(to_json(dvm)) AS obj)
+
+            ).*
+      FROM diary_view_mat dvm
+     WHERE NOT closed AND NOT EXISTS (SELECT true FROM diary_open_view_mat doV WHERE doV.diary_id = dvm.diary_id)
+
+    UNION SELECT * FROM diary_view_mat dvm WHERE closed AND NOT EXISTS (SELECT true FROM diary_open_view_mat doV WHERE doV.diary_id = dvm.diary_id)
+    ;
+
+
+   CREATE OR REPLACE FUNCTION diary_view_update()
+    RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+    UPDATE diary_entry
+     SET app_user_id = NEW.user_id,
+         claim_id = NEW.claim_id,
+         processed = NEW.closed,
+         note = NEW.note,
+         action_date = NEW.date
+    WHERE diary_entry_id = NEW.diary_id;
+    UPDATE diary_view_dirty SET dirty = now();
+    
+    RETURN NEW;
+    END; $$;
+
+  CREATE OR REPLACE TRIGGER diary_view_update INSTEAD OF UPDATE ON diary_view
+       FOR EACH ROW EXECUTE PROCEDURE diary_view_update();
+#+end_src
+
+#+RESULTS:
+| CREATE VIEW     |
+|-----------------|
+| CREATE FUNCTION |
+| CREATE TRIGGER  |
+
+** Time to =upsert(diary*, json)= with functions
+:PROPERTIES:
+:CUSTOM_ID: time-to-upsertdiary-json-with-functions
+:END:
+
+The API and entry point to diaries is the [[#the-diary_view-and-friends][=diary_view=]] view.
+
+But the =diary_entry= is where things are stored.
+
+
+#+begin_src sql :noweb-ref upsert-diary-view
+  --                   View "public.diary_view"
+  --      Column      |  Type   | Collation | Nullable | Default 
+  -- -----------------+---------+-----------+----------+---------
+  --  diary_id        | integer |           |          | 
+  --  claim_id        | integer |           |          | 
+  --  status          | text    |           |          | 
+  --  note            | text    |           |          | 
+  --  date            | date    |           |          | 
+  --  user_name       | text    |           |          | 
+  --  user_id         | integer |           |          | 
+  --  closed          | boolean |           |          | 
+  --  contract_id     | integer |           |          | 
+  --  contract_number | text    |           |          | 
+  --  policy_id       | integer |           |          | 
+  --  policy_number   | text    |           |          | 
+  --  insured_id      | integer |           |          | 
+  --  insured_name    | text    |           |          | 
+  --  risk_id         | integer |           |          | 
+  --  risk_type       | text    |           |          | 
+
+
+  CREATE OR REPLACE FUNCTION upsert(diary_view, json)
+  RETURNS diary_view LANGUAGE PLPGSQL AS $$
+  DECLARE
+   _update INT; 
+   _old diary_view;
+   _old_jsonb jsonb;
+   _new diary_view;
+   _new_jsonb jsonb;
+
+   cols text[];
+   vals text[];
+   query text;
+  BEGIN
+
+   SELECT COALESCE($1.diary_id, ($2->>'diary_id')::int)
+     INTO _update;
+
+   IF (_update IS NOT NULL)
+   THEN
+    SELECT (dv).* INTO _old
+      FROM diary_view dv
+      WHERE ($1.diary_id IS NOT NULL AND dv.diary_id = $1.diary_id)
+            OR diary_id = CAST(($2->>'diary_id') AS INT);
+
+      _old_jsonb = to_jsonb(_old);
+    END IF;
+
+   -- Diff old with $2
+   SELECT jsonb_object_agg((pair).key, (pair).value)
+    INTO _new_jsonb
+    FROM (SELECT json_each($2) as pair) _nsrc
+    WHERE (pair).value::text != CAST(_old_jsonb->((pair).key) AS json)::text;
+
+   IF (_update IS NOT NULL)   THEN 
+    SELECT (select array_agg(format('%I = $1.%I', key, key)) INTO vals FROM jsonb_each(_new_jsonb));
+     
+   query := format('UPDATE diary_view SET %s WHERE diary_id = %s RETURNING (diary_view).*',
+    	            array_to_string(vals, ','), _update);
+   ELSE 
+    SELECT (select array_agg(format('%I', key)) INTO cols FROM jsonb_each(_new_jsonb));
+    SELECT (select array_agg(format('$1.%I', key)) INTO vals FROM jsonb_each(_new_jsonb));
+    
+   query := format('INSERT INTO diary_view(%s) VALUES (%s) RETURNING (person).*',
+    	     array_to_string(cols, ','), array_to_string(vals, ','));
+   END IF;
+
+   _new := jsonb_populate_record(_new, _new_jsonb);
+
+
+   IF (cardinality(vals) > 0)
+    THEN EXECUTE query USING _new INTO _new;
+   END IF;
+
+   RAISE NOTICE 'Upsert diary_view. Update? % % % %',
+   _update, vals, _new, query;
+
+    UPDATE diary_view_dirty dvd SET dirty = now()
+     WHERE dvd.dirty = clean;
+
+
+    return _new;
+  END;
+
+
+  $$;
+
+   -- DROP TRIGGER IF EXISTS dia
+
+#+end_src
+
+#+RESULTS:
+| CREATE FUNCTION |
+|-----------------|
+
+** Alter Materialized views a bunch
+:PROPERTIES:
+:CUSTOM_ID: alter-materialized-views-a-bunch
+:END:
+
+#+begin_src sql :noweb yes
+  BEGIN;
+  ALTER VIEW diary_view RENAME TO diary_view_old;
+  ALTER MATERIALIZED VIEW diary_view_mat
+    RENAME TO diary_view_mat_old;
+  ALTER MATERIALIZED VIEW diary_open_view_mat
+    RENAME TO diary_open_view_mat_old;
+  ALTER FUNCTION diary_view(integer) RENAME TO diary_view_old;
+  ALTER FUNCTION diary_view_clean(interval) RENAME TO diary_view_clean_old;
+  ALTER FUNCTION diary_view_clean() RENAME TO diary_view_clean_old;
+  DO $$DECLARE i RECORD;
+  BEGIN
+    FOR i IN (SELECT relname FROM pg_class WHERE relkind = 'i' AND relname LIKE 'dv_%') 
+     LOOP 
+      EXECUTE 'ALTER INDEX ' || i.relname ||' RENAME TO '|| i.relname ||'_old'; 
+   END LOOP; END; 
+  $$;
+
+  <<diary-mat-views>>
+  <<diary-view-clean>>
+  <<diary-view>>
+  <<upsert-diary-view>>
+
+  DROP FUNCTION diary_view_clean_old(interval);
+  DROP VIEW diary_view_old CASCADE;
+  DROP MATERIALIZED VIEW diary_view_mat_old CASCADE;
+  DROP MATERIALIZED VIEW diary_open_view_mat_old CASCADE;
+  COMMIT;
+  --ROLLBACK;
+#+end_src
+
+
+#+RESULTS:
+| BEGIN                   |
+|-------------------------|
+| ALTER VIEW              |
+| ALTER MATERIALIZED VIEW |
+| ALTER MATERIALIZED VIEW |
+| ALTER FUNCTION          |
+| ALTER FUNCTION          |
+| ALTER FUNCTION          |
+| DO                      |
+| DO                      |
+| CREATE INDEX            |
+| CREATE INDEX            |
+| CREATE INDEX            |
+| CREATE INDEX            |
+| CREATE INDEX            |
+| CREATE INDEX            |
+| CREATE INDEX            |
+| CREATE INDEX            |
+| CREATE TABLE            |
+| INSERT 0 0              |
+| CREATE FUNCTION         |
+| CREATE FUNCTION         |
+| CREATE VIEW             |
+| CREATE FUNCTION         |
+| CREATE TRIGGER          |
+| CREATE FUNCTION         |
+| DROP FUNCTION           |
+| DROP VIEW               |
+| DROP MATERIALIZED VIEW  |
+| DROP MATERIALIZED VIEW  |
+| COMMIT                  |
+

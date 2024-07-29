@@ -27,29 +27,36 @@ I want this application to turn 40. Half way there!
   - [[#components][Components]]
     - [[#dates-and-times][Dates and Times]]
     - [[#auto-select][Auto Select]]
+- [[#elements][Elements]]
+  - [[#ecmselect-dropdown-select-search-autocomplete-thing][EcmSelect dropdown select search autocomplete thing]]
+    - [[#thisselected-select-option-property][this.selected: Select "option" property]]
+    - [[#default-static-select][Default Static Select]]
 - [[#implementation][Implementation]]
   - [[#pages-in-single-page-the-router][Pages, in single page? The router]]
   - [[#an-ecmspa-object-global-ecm-instance][An EcmSPA object, global ECM instance]]
     - [[#constructor-ecmspa][Constructor EcmSPA]]
     - [[#queryselector-mostly-to-find-data-attributes][.querySelector mostly to find data attributes]]
+    - [[#getset-cookies][Get/Set cookies]]
     - [[#initialize-an-element][Initialize an element]]
     - [[#load-an-element][Load an element]]
     - [[#replaceelement-replace-an-element][replaceElement Replace an element]]
     - [[#loadscript-dynamic-loading-of-javascript-files][.loadScript Dynamic Loading of JavaScript files]]
-  - [[#ecmelement-and-the-ecmspadomelements-cache-the-superclass-of-all][EcmElement and the EcmSPA.domElements[] cache: The superclass of all]]
+  - [[#ecmelement-the-super-element][EcmElement: The Super Element]]
+    - [[#cache][Cache?]]
+  - [[#thiscreate-a-rational-documentcreateelement-helper][this.create, a rational document.createElement helper]]
+  - [[#link-up-object-and-inputs][Link Up Object and Inputs]]
   - [[#ecmdatetime-date-time-and-datetime-local][EcmDateTime: "date". "time" and "datetime-local"]]
     - [[#constructor][Constructor]]
     - [[#the-date-property][The Date property]]
     - [[#parser][Parser]]
     - [[#html][HTML]]
     - [[#input-typedate][<input type="date">]]
-  - [[#ecmselect-dropdown-select-search-autocomplete-thing][EcmSelect dropdown select search autocomplete thing]]
-    - [[#thisselected-select-option-property][this.selected: Select "option" property]]
-    - [[#default-static-select][Default Static Select]]
   - [[#the-css-style][The css style]]
   - [[#the-rest-of-indexjs][The rest of index.js]]
   - [[#gerbil-server][Gerbil Server]]
 :END:
+
+
 
 
 * Demo and Documentation
@@ -68,7 +75,7 @@ which itself is a test of the SPA library itself.
 The premise is that the =index.html= takes care of some dependencies
 and then loads =index.js=.
 
-#+begin_src html :tangle ./spa/demo/html/index.html
+#+begin_src html :tangle ./demo/html/index.html
     <!DOCTYPE html>
     <html lang="en">
       <head>
@@ -104,7 +111,7 @@ What is done is to replace the contents of =#EcmSPA= with =./main.html=.
 :CUSTOM_ID: mainhtml
 :END:
 
-#+begin_src html :tangle ./spa/demo/html/main.html
+#+begin_src html :tangle ./demo/html/main.html
   <div id="demoMain">
    <nav data-ecm-replace="/navbar.html"></nav>
     <div data-ecm-replace="auto-select.html"></div>
@@ -120,7 +127,7 @@ What is done is to replace the contents of =#EcmSPA= with =./main.html=.
 :CUSTOM_ID: navbar
 :END:
 
-#+begin_src html :tangle ./spa/demo/html/navbar.html
+#+begin_src html :tangle ./demo/html/navbar.html
      <nav class="uk-navbar-container">
       <div class="uk-container-expand" >
         <div uk-navbar>
@@ -170,7 +177,7 @@ There's not that many external components needed now a days.
  First a regular date.
 
  
-#+begin_src html :tangle ./spa/demo/html/datetime.html
+#+begin_src html :tangle ./demo/html/datetime.html
    <div id="ecmDateAndTimeDemo">
 
   This is a regular <code>data-ecm-date</code> attribute.
@@ -186,7 +193,7 @@ There's not that many external components needed now a days.
 
 To start off simple we have an HTML select.
 
-#+begin_src html :tangle ./spa/demo/html/auto-select.html
+#+begin_src html :tangle ./demo/html/auto-select.html
   <div>
   This is testing the <code>data-ecm-select</code> attribute
     <select class="uk-select" data-ecm-select name="examiner-id">
@@ -200,6 +207,642 @@ To start off simple we have an HTML select.
     
 #+end_src
 
+
+
+* Elements
+:PROPERTIES:
+:CUSTOM_ID: elements
+:END:
+
+
+** =EcmSelect= dropdown select search autocomplete thing
+:PROPERTIES:
+:CUSTOM_ID: ecmselect-dropdown-select-search-autocomplete-thing
+:END:
+
+
+
+https://www.algolia.com/blog/engineering/how-to-implement-autocomplete-with-javascript-on-your-website/
+https://stackoverflow.com/questions/30797244/detecting-the-end-of-the-scrollable-drop-down
+
+https://codepen.io/mehuldesign/pen/eYpbXMg
+
+
+
+#+begin_src js :tangle ./js/EcmSelect.js
+  "use strict";
+  //debug
+  globalThis._ECM_SELECT = [];
+
+  function EcmSelect(select) {
+      const el = this.templateElement(),
+  	  parent = select.parentElement,
+  	  input = el.querySelector('form').querySelector('input'),
+  	  output =  el.querySelector('input'),
+  	  ul =  el.querySelector('form').querySelector('ul'),
+            display =  el.querySelector('[ecm-out]'),
+            close = display.querySelector('.ecm-close'),
+  	  obj = this.selectToObject(select),
+  	  options = obj.options, self = this
+
+
+      globalThis._ECM_SELECT.push(self);
+
+      EcmElement.call(this, el);
+      output.name = obj.name
+      // el.style.position = 'relative'
+
+      select.replaceWith(el);
+
+      Object.assign(this, {
+  	element: el, output, input, display, ul, options
+      })
+
+      el.addEventListener('click', function(event) {
+  	const disp = ul.style.display, val = self.selectedOption,
+  	      hidden = disp !== 'block', hide = !hidden
+  	self.blurred = false;
+          event.stopPropagation() 
+          // console.log("Clin on EL'=, hidden", hidden, ul.style.display,self.showUl, val, hide)
+  	ul.style.display = hide || val ? 'none' : 'block'
+      })
+      el.addEventListener('mouseleave', function () { self.blurred = false ;})
+      close.addEventListener('click', function (e) {
+         e.stopPropagation() ;
+         self.selectOption({value: false})
+  	self.ul.style.display = 'block'
+      })
+
+      ul.addEventListener('mouseover', () => {
+        self.showUl = true; input.focus()})
+      ul.addEventListener('mouseleave', function () { self.showUl = false ; self.blurred = false})
+
+      // * The input type=text
+
+      input.addEventListener('click', event => { event.stopPropagation() ;})
+      input.addEventListener('focus',function () { ul.style.display = 'block'})
+      input.addEventListener('blur', function () {
+  	if (!self.showUl) {
+  	    ul.style.display = 'none'
+  	    self.blurred = true;
+  	}})
+
+      input.addEventListener('keydown', function (event) {
+  	event.stopPropagation() ;
+  	self.onKeyDown(this, event)
+      })
+
+      input.addEventListener('keyup', function (event) {
+  	event.stopPropagation() ;
+  	self.onKeyUp(event)
+      })
+
+
+      
+      setTimeout(function test() {
+  	if (parent.contains(el)) {
+  	    input.style.height = '' + (el.offsetHeight - 2) + 'px'
+  	    
+  	} else {
+  	    setTimeout(test, 50);
+  	}
+      }, 50);
+      
+      // Object.assign(ul.style, {
+      // 	position: 'absolute', left: '2px', right: '3px',
+      //     border: '1px solid #dfe8f1', borderTop: '0px', borderRadius: '3px',
+      // 	margin: '0px', listStyle: 'outside none none',
+      //     boxShadow: '0 1px 24px 2px rgba(135, 158, 171, 0.2)',
+      // 	zIndex: 7, backgroundColor: '#fff', backgroundClip: "padding-box",
+      // })
+
+      obj.options.forEach(opt => {
+  	self.addOption(opt)
+      })
+
+
+  	
+       // console.log('o?', this.optionElement("foo"), el.offsetHeight)
+      // this.ul.append(this.optionElement("foo"))
+
+      // console.log('New EcmSelect', this, this.options)
+
+       if (!document.head.dataset.ecmSelectCss) {
+      	document.head.append(this.templateStyleElement())
+           document.head.dataset.ecmSelectCss = true
+      }
+
+      self.element = el
+      
+      
+      return this;
+  }
+
+  Object.setPrototypeOf(EcmSelect.prototype, EcmElement.prototype);
+
+  EcmSPA.prototype.initFunctions.EcmSelect = function (el) {
+      this.querySelectorAll(el, '[data-ecm-select]')
+  	.forEach(e => new EcmSelect(e)) 
+  }
+
+  EcmSelect.prototype.onKeyUp = function (event) {
+      if (event.which == 13) {
+  	 console.log('Hit enter', this, event)
+         // this.options[this.hoverIdx()], this.ul.children[this.hoverIdx()])
+  	const mkOver = this.ul.children[this.hoverIdx()]
+  	
+  	if (mkOver) {
+  	    this.selectOptionElement(mkOver)
+  	} else {
+  	    const opt = this.options.find(o => o.selected)
+  	    if (opt) {
+  		this.selectOption(opt)
+  	    }
+  	    
+  	}
+
+  	this.ul.style.display = 'none'
+      }
+      else if ([37, 38, 39, 40].some(n => event.which == n)) {
+  	// do nothing
+  	null
+      
+  	
+      } else {
+        // console.log('Filter and set scrolltop');
+  	this.filter()
+  	this.ul.scrollTop = 0
+      }
+  }
+
+
+  EcmSelect.prototype.toggleLoading = function (onOrOff) {
+      this.loadingEl = this.loadingEl || ((d = document.createElement('div')) => {
+  	d.setAttribute('uk-spinner', '')
+  	d.style.float = 'right'
+  	d.style.display = 'none'
+       this.element.append(d)
+  	return d
+      })()
+
+      const loading = this.loadingEl,
+  	  el = this.element,
+            always = typeof onOrOff !== 'undefined',
+  	  alwaysOn = (always && onOrOff)
+      
+      if (loading.style.display == 'none' || alwaysOn) {
+  	el.style.backgroundImage = 'unset';
+  	el.style.paddingRight = 'unset';
+  	loading.style.display = ''
+      } else {
+  	el.style.backgroundImage = '';
+  	el.style.paddingRight = '';
+  	loading.style.display = 'none'
+      }
+  }
+
+  	
+     
+    
+  EcmSelect.prototype.filter = function (txt = false) {
+     let values = this.element.querySelectorAll('[data-ecm-value]'),
+         limit = this.limit || 10,
+         count = limit,
+          
+         filterValue = (item, txt) => {
+  	   const display = item.textContent.match(txt)
+  	   if (!display // || count < 1
+             ) {
+  	       item.style.display = 'none'
+  	   } else {
+  	       item.style.display = '';
+  	        count = count - 1
+  	   }
+         },
+         // The text is either what is passed OR our input value.
+         rtxt = txt || this.input.value,
+         // (^foo)|(, foo) for the first time
+         srexp = rtxt ? '(^'+rtxt+')|(, '+rtxt+')' : ''
+         
+
+      values.forEach(v => filterValue(v, new RegExp(srexp)))
+
+      // none! Try a different match.
+      if (count === limit) {
+  	values.forEach(v => filterValue(v, new RegExp(rtxt)))
+      }
+
+
+  }
+
+
+     
+  EcmSelect.prototype.onKeyDown = function (el, event) {
+      const arrow = (key) => {
+  	let idx = this.hoverIdx(),
+  	    opts = [...this.ul.childNodes],
+  	    len = opts.length,
+  	    nextOpt = () => {
+  		return opts.findIndex((v,i) =>
+  		    i > idx && v.style.display !== 'none')},
+  	    prevOpt = () => {
+  		return opts.findLastIndex((v,i) =>
+  		    i < idx && v.style.display !== 'none')}
+
+  	    
+  	key === 40 ? key = 'down' : key = 'up'
+
+  	if (key === 'down' && (idx + 1) < len) {
+  	    const li = opts[nextOpt()]
+  	    if (li) {
+  		this.addHover(li)
+  		li.scrollIntoView()
+              }
+  	} else if (key === 'up' && (idx - 1 >= 0)) {
+  	    // console.log('Hit the uparrow', idx, prevOpt())
+  	    const li = opts[prevOpt()]
+  	    if (li) {
+  		this.addHover(li)
+  		li.scrollIntoView()
+  	    }
+  	} else if (key === 'up') {
+              this.addHover(false)
+  	}
+
+              
+  	// console.log('Hover', idx, ' opts ', opts)
+      }
+
+      if (event.which === 40 || event.which === 38) {
+  	arrow(event.which)
+      } else {
+  	//console.warn("Down!", event, event.key)
+      }
+  	
+
+
+
+
+  }
+      
+      
+  EcmSelect.prototype.selectToObject = (select) => {
+      return {
+    	name: select.name,
+            required: select.hasAttribute('required'),
+    	options: [... select.options].map(o => {
+    	    return  {
+    		value: o.value,
+    		text: o.text,
+    		selected: o.selected
+    	    }
+    	})
+      }
+  };
+
+  EcmSelect.prototype.selectedOption = false;
+
+  EcmSelect.prototype.selectOption = function (opt) {
+      this.selectedOption = opt;
+      this.options.forEach(o => {
+  	o.selected = (o.value === opt.value)
+      })
+      const val = opt && opt.value,
+  	  close = this.display.querySelector('.ecm-close'),
+  	  change = new Event('change');
+
+      // console.log("Selecting Option: ", opt, close)
+      this.display.textContent = ''
+      this.display.append(close);
+  
+      if (val || typeof val === 'string') {
+  	this.output.value = val
+          this.output.dispatchEvent(change)
+  	this.display.append(opt.text);
+          this.input.style.display = 'none'
+          this.display.style.display = 'block'
+          this.element.style.backgroundImage = 'unset'
+          this.element.style.padding = 'unset'
+          
+      } else {
+  	this.output.removeAttribute('value');
+          this.display.style.display = 'none'
+          this.input.style.display = ''
+          // this.ul.style.display = 'block'
+          this.selectedOption = false
+          this.element.style.backgroundImage = ''
+          this.element.style.padding = ''
+      }
+      return opt
+  }
+  EcmSelect.prototype.selectOptionElement = function (el) {
+      if (!el) { return el }
+      const eopt = {
+  	text: el.textContent,
+  	value: el.getAttribute("data-ecm-value")
+      }, opt = this.options.find(o => o.text == eopt.text)
+
+     
+      // console.log('inside select option element', this, this.element)
+      this.selectOption(opt || eopt)
+      this.ul.style.display = 'none'
+      return opt || eopt
+  }
+
+
+  EcmSelect.prototype.hoverIdx = function () {
+      var idx = -1
+      
+      Array.from(this.ul.children).forEach((el, n) => {
+  	if (el.hasAttribute('data-ecm-hover')) idx = n;
+      })
+
+      // console.log('have Hover IDX', idx)
+      return idx
+  }
+
+  EcmSelect.prototype.addHover = function (el) {
+      el && el.setAttribute('data-ecm-hover', '')
+      Array.from(this.ul.children).forEach(e => {
+  	if (el !== e) {
+  	    e.removeAttribute('data-ecm-hover')
+  	}
+      })
+  }
+
+  // EcmSelect.prototype.onKeyDown = function 
+  	    
+  EcmSelect.prototype.addOption = function (opt, prep)  {
+      // console.log('W Am I here', prep)
+      const {text, value, selected} = opt,
+            el = this.optionElement(text, value, !!selected),
+            ex = false, // this.options.find(o => o.text === text),
+            self = this
+
+      // console.log('added option', opt, el, this, self, prepend)
+      if (ex) { 
+  	Object.assign(ex, opt)
+      } else this.options.push(opt);
+      
+      el.addEventListener('mouseover',function () { self.addHover(this) })
+      el.addEventListener(
+  	  'mouseleave', function() {
+         this.removeAttribute('data-ecm-hover')})
+      el.addEventListener('click', function(event) {
+  	event.stopPropagation()
+  	// console.log('Selecting Option Element', this, self, self.hoverIdx())
+  	self.selectOptionElement(this)
+      })
+
+      prep ? this.ul.prepend(el) :  this.ul.append(el)
+
+      return el
+  }
+
+
+  EcmSelect.prototype.template = `<div data-ecm-select-wrapper \
+   class="ecm-select uk-select"
+    ><div ecm-out><a class="ecm-close" href="#">&nbsp;</a></div
+    ><input type="hidden"
+    ><form autocomplete="off"
+       ><input class='uk-input' type="text"
+       ><ul class="ecm-options" tabindex="0"></ul
+    ></form
+   ></div>`;
+
+  EcmSelect.prototype.templateElement = function(tpl = false) {
+      const el = document.createElement('div')
+      el.innerHTML = tpl || this.template;
+      return el.firstElementChild;
+  }
+
+
+  EcmSelect.prototype.optionElement = function (txt, value, selected) {
+      const li = document.createElement('li'),
+  	  a = document.createElement('a')
+      if (selected) {
+      // console.log("Opt:", selected)
+  	a.innerHTML = `<span style="position: absolute; left:4px ; top: 0.5em"
+            uk-tooltip="Default value" uk-icon="check">&nbsp;</span>`
+      }
+      a.append(txt || "\u00A0")
+      if (value || typeof value === 'string') {
+  	li.setAttribute('data-ecm-value', value)
+      }
+
+      li.append(a)
+      return li
+  }
+
+  EcmSelect.prototype.templateStyle = `
+   .ecm-select { position: relative; }
+   .ecm-select [uk-spinner] { position:absolute; right:5px ; top: 5px }
+
+    .ecm-select input {
+      background: unset;
+      height: 38px;
+      vertical-align: unset;
+      border: 0px;
+   }
+
+       .ecm-options{
+         background-clip: padding-box;
+         background-color: #fff;
+         border: 1px solid #dfe8f1;
+         border-top: unset;
+         border-radius: 3px;
+         box-shadow: 0 1px 7px 2px rgba(135, 158, 171, 0.2);
+         display: none;
+         padding: 0 0 10px;
+         position: absolute;
+         z-index: 2; 
+         float: left;
+         list-style: outside none none; max-height:220px; overflow:scroll;
+         margin:0px;
+         left:0px;
+         right:0px;
+         
+       }
+       ul.ecm-options li a {
+         padding-left: 2em;
+         cursor: pointer;
+         white-space: nowrap;
+         text-overflow: ellipsis;
+         overflow: hidden;
+         color: #4c4c4c;
+         text-decoration: none;
+         outline: 0;
+       }
+      ul.ecm-options li[data-ecm-hover] {
+       background: none repeat scroll 0 0 #eff4f6;
+       cursor: pointer;
+       text-decoration: underline;
+       color: #1e87f0;
+      }
+
+   .ecm-select div[ecm-out]  {
+     background: #f8f8f8;
+     color: #666;
+     max-height: 100%;
+     overflow: hidden;
+     text-overflow: ellipsis;
+     display: none;
+     padding-left: 1em;
+   } 
+   .ecm-select div[ecm-out] a.ecm-close {
+  	-webkit-appearance: none;
+      float: right; 
+  	-moz-appearance: none;
+  	width: 1em;
+  	height: 100%;
+  	margin: auto;
+  	margin-right: 0.5em;
+      background-image: url("data:image/svg+xml;charset=utf8,%3Csvg viewBox='0 0 14 14' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath stroke='rgba(25,25, 25, 1)' stroke-width='1' stroke-linecap='round' stroke-miterlimit='10' d='M1 1 L14 14 M1 14 L14 1'/%3E%3C/svg%3E");
+  	background-repeat: no-repeat;
+  	background-position: 100% 50%;
+    }
+
+    [data-ecm-select-display] a:hover {
+       cursor: pointer;
+       text-decoration: underline;
+       color: #1e87f0; width: 1.33em;
+      }
+
+  `;
+
+  EcmSelect.prototype.templateStyleElement = function (css) {
+      const style = document.createElement('style')
+      style.append(css || this.templateStyle)
+      return style;
+  }
+   
+#+end_src
+      
+
+*** =this.selected=: Select "option" property
+:PROPERTIES:
+:CUSTOM_ID: thisselected-select-option-property
+:END:
+
+#+begin_src js :noweb-ref ecm-auto
+
+  Object.defineProperty(EcmAutoComplete.prototype, 'selected', {
+      get() { return this.selectedElement },
+      set(v) {
+  	 this.selectedElement = v;
+           const disp = v && v.firstChild && v.firstChild.firstChild
+  		 ? v.firstChild.firstChild.cloneNode(true) : " " //v.firstChild.cloneNode(true) : false
+           // console.log('settong', v, disp)
+          $(this.optionsUl).hide()
+  	 if (!v) {
+  	     $(this.display).css('z-index', '-42')
+  		 .hide().contents().filter((n) =>  n > 0 ).remove()
+  	     $(this.input).css('z-index', 'auto')
+  	 } else {
+               
+  	     $(this.input).css('z-index', '-42')
+  	    // $(this.display).css('z-index', 'auto')
+  	     $(this.display).show().css('z-index', 'auto').append(disp)
+  	 }
+  	 return v
+      }
+  });
+#+end_src
+
+
+*** Default Static Select
+:PROPERTIES:
+:CUSTOM_ID: default-static-select
+:END:
+
+The idea here is that a =<select>= becomes an =EcmAutoComplete=
+without any effort on our side.
+
+#+begin_src js :noweb-ref ecm-auto
+  EcmAutoComplete.prototype.selectToObject = (select) => {
+    return {
+  	name: select.name,
+          required: $(select).attr('required'),
+  	options: [... select.options].map(o => {
+  	    return obj = {
+  		value: o.value,
+  		text: o.text,
+  		selected: o.selected
+  	    }
+  	})
+    }
+  };
+#+end_src
+
+That select turns into our select.
+
+#+begin_src js :noweb-ref ecm-auto
+
+              EcmAutoComplete.prototype.elementHtml = `
+                 <div data-ecm-select-wrapper class="ecm-select uk-select">
+                  <input type="hidden" data-ecm-select-out>
+                  <form autocomplete="off">
+                  <div data-ecm-select-display><a class="ecm-close" href="#"></a></div>
+                   <input class='uk-input' type="text" data-ecm-select-text>
+                   <ul class="ecm-options" data-ecm-options></ul>
+                  </form>
+                 </div>`;
+
+                EcmAutoComplete.prototype.makeEmptyElement = function(html = false) {
+                 const edoc = new DOMParser().parseFromString(html || this.elementHtml, "text/html"),
+                       child = edoc.body.firstChild
+                    return child;
+                }
+#+end_src
+
+
+So just need a way to put them together.
+
+#+begin_src js :noweb-ref ecm-auto
+  EcmAutoComplete.prototype.optionsUl = false;
+  EcmAutoComplete.prototype.addOptions = function (opts) {
+      const ul = this.optionsUl 
+      var list = ''
+      
+      for (i=0; i<opts.length; i++) {
+  	list += '<li data-ecm-option'
+  	    + ((val = opts[i].value) => {
+  	      if (val) {
+  		  return '="' + val + '"';
+  	      } else  { return '' }
+  	  })()
+  	    + '><a href="#">'+opts[i].text+'</a></li>'
+  	if (opts[i].selected) this.selected = opts[i]
+      }
+
+      ul.innerHTML = ul.innerHTML + list
+  }
+
+
+  	    
+  EcmAutoComplete.prototype.makeElement = function (name = '', opts = [], html = false) {
+      const el = this.makeEmptyElement(html)
+      // console.log('el', el)
+      $(el).find('[data-ecm-select-name]').each((_, e) => {
+  	this.nameInput = e
+  	e.setAttribute('name', name)
+      });
+      $(el).find('[data-ecm-select-text]').each((_, e)  => { this.textInput = e });
+      $(el).find('[data-ecm-options]').each((_, e) => {
+  	this.optionsUl = e
+  	this.addOptions(opts)
+      });
+     this.options = opts
+     // console.log('el', el, ' opts ', this.options)
+  return el;
+  };
+
+  EcmAutoComplete.prototype.makeElementFromSelect = function (sel, html = false) {
+   const {name, options} = this.selectToObject(sel)
+
+   return this.makeElement(name, options)
+  }
+#+end_src
 
 * Implementation
 :PROPERTIES:
@@ -217,7 +860,7 @@ https://javascript.info/onload-ondomcontentloaded
 :CUSTOM_ID: pages-in-single-page-the-router
 :END:
 
-#+begin_src js :tangle ./spa/js/index.js :comments org
+#+begin_src js :tangle ./js/index.js :comments org
    function EcmRouter() {
        this.elements = {}
        return this;
@@ -249,15 +892,46 @@ https://javascript.info/onload-ondomcontentloaded
 :END:
 
 #+begin_src js :noweb-ref global-ECM
+
+  EcmSPA.prototype.currentScript = document.currentScript;
+
+  EcmSPA.prototype.pathExpand = function (postfix = '', path = false) {
+      const uri = path || this.currentScript.src.split('?')[0],
+  	  dir = path || uri.split('/').slice(0, -1).join('/')+'/'
+      
+      return dir + postfix;
+  }
+
+   EcmSPA.prototype.fixScriptsSoTheyAreExecuted = (el) => {
+  var scripts = el.querySelectorAll('script'),
+      script, fixedScript, i, len;
+
+  for (i = 0, len = scripts.length; i < len; i++) {
+    script = scripts[i];
+
+    fixedScript = document.createElement('script');
+    // console.log(script)
+    fixedScript.type = script.type;
+    fixedScript.innerHTML = script.innerHTML;
+    script.src ? fixedScript.src = script.src : false;
+    script.onload ? fixedScript.onload = script.onload : false;
+    fixedScript.async = false;
+
+    script.parentNode.replaceChild(fixedScript, script);
+  }
+  }
+
   window.addEventListener("load", (event) => {
       const ECM =  new EcmSPA();
       globalThis.ECM = ECM
 
+      ECM.body = document.querySelector("#EcmSPA")
 
-      ECM.loadScript('EcmSelect.js').then(_ => {
-   	ECM.loadElement('/main.html').then(main => {
-  	    const body = document.querySelector("#EcmSPA")
-  	    body.replaceChildren(main)
+      ECM.loadScript(ECM.pathExpand('EcmSelect.js')).then(_ => {
+   	ECM.loadElement(ECM.body.dataset.uri).then(main => {
+  	    ECM.body.replaceChildren(main)
+              ECM.fixScriptsSoTheyAreExecuted(main)
+            
   	})
       })
   });
@@ -270,7 +944,7 @@ https://javascript.info/onload-ondomcontentloaded
 :CUSTOM_ID: constructor-ecmspa
 :END:
 
-#+begin_src js :tangle ./spa/js/index.js :comments org
+#+begin_src js :tangle ./js/index.js :comments org
   function EcmSPA () {
       this.router = new EcmRouter()
       this.locale = Intl.DateTimeFormat().resolvedOptions().locale;
@@ -285,25 +959,56 @@ https://javascript.info/onload-ondomcontentloaded
 
 This is because we want to modify/replace elements as they are loaded.
 
-#+begin_src js :tangle ./spa/js/index.js :comments org
+#+begin_src js :tangle ./js/index.js :comments org
   EcmSPA.prototype.querySelectorAll = function(el, ... sels){
      const selThis = el.matches(... sels), selC = el.querySelectorAll(... sels)
-  
+
     return [... selThis ? [el] : [], ... selC]
   }
+  
 #+end_src
 
+*** Get/Set cookies
+:PROPERTIES:
+:CUSTOM_ID: getset-cookies
+:END:
 
+#+begin_src js :tangle ./js/index.js :comments org
+
+  EcmSPA.prototype.setCookie = function (cname, cvalue, exdays) {
+    const d = new Date();
+    d.setTime(d.getTime() + (exdays * 24 * 60 * 60 * 1000));
+    let expires = "expires="+d.toUTCString();
+    document.cookie = cname + "=" + cvalue + ";" + expires + ";path=/";
+  }
+
+  EcmSPA.prototype.getCookie = function (cname) {
+    let name = cname + "=";
+    let ca = document.cookie.split(';');
+    for(let i = 0; i < ca.length; i++) {
+      let c = ca[i];
+      while (c.charAt(0) == ' ') {
+        c = c.substring(1);
+      }
+      if (c.indexOf(name) == 0) {
+        return c.substring(name.length, c.length);
+      }
+    }
+    return "";
+  }
+
+#+end_src
 
 *** Initialize an element
 :PROPERTIES:
 :CUSTOM_ID: initialize-an-element
 :END:
 
-#+begin_src js :tangle ./spa/js/index.js :comments org
+#+begin_src js :tangle ./js/index.js :comments org
 
   EcmSPA.prototype.initFunctions = {}
   EcmSPA.prototype.initElement = function(el) {
+      // console.warn("Init fns?", this.initFunctions, this)
       Object.values(this.initFunctions).forEach(init => {
   	init.call(this, el)
       })
@@ -318,7 +1023,7 @@ This is because we want to modify/replace elements as they are loaded.
 :CUSTOM_ID: load-an-element
 :END:
 
-#+begin_src js :tangle ./spa/js/index.js :comments org
+#+begin_src js :tangle ./js/index.js :comments org
   EcmSPA.prototype.loadElement = function(name, use_cache = true){
      return this.router.loadElement(name, use_cache).then(e => {
       // some elements might replace themselves
@@ -337,16 +1042,17 @@ This is because we want to modify/replace elements as they are loaded.
 :CUSTOM_ID: replaceelement-replace-an-element
 :END:
 
-#+begin_src js :tangle ./spa/js/index.js :comments org
+#+begin_src js :tangle ./js/index.js :comments org
   EcmSPA.prototype.replaceElement = function(from, to, use_cache = true){
      return this.loadElement(to, use_cache).then(e => {
         from.replaceWith(e)
+        this.fixScriptsSoTheyAreExecuted(e)
         return e
       })
   }
 #+end_src
 
-#+begin_src js  :tangle ./spa/js/index.js :comments org
+#+begin_src js  :tangle ./js/index.js :comments org
   EcmSPA.prototype.initFunctions.ecm_replace = function (el) {
       const init = (e) => { this.replaceElement(e, $(e).data('ecm-replace'))};
       this.querySelectorAll(el, '[data-ecm-replace]').forEach(init) 
@@ -358,7 +1064,7 @@ This is because we want to modify/replace elements as they are loaded.
 :CUSTOM_ID: loadscript-dynamic-loading-of-javascript-files
 :END:
 
-#+begin_src js :tangle ./spa/js/index.js :comments org
+#+begin_src js :tangle ./js/index.js :comments org
   EcmSPA.prototype.loadScript = function (src) {
       const el = document.createElement('script'),
   	  pro = new Promise((res) => {
@@ -376,11 +1082,21 @@ This is because we want to modify/replace elements as they are loaded.
 #+end_src
 
 
-** =EcmElement= and the =EcmSPA.domElements[]= cache: The superclass of all
+** =EcmElement=: The Super Element
 :PROPERTIES:
-:CUSTOM_ID: ecmelement-and-the-ecmspadomelements-cache-the-superclass-of-all
+:CUSTOM_ID: ecmelement-the-super-element
 :END:
 
+
+
+
+*** Cache? 
+:PROPERTIES:
+:CUSTOM_ID: cache
+:END:
+...  and the =EcmSPA.domElements= cache: The superclass of all
+
+I don't quite get what the cache was meant for.
 
 #+begin_src js :noweb-ref EcmElement
   EcmSPA.prototype.domElements = {}
@@ -430,7 +1146,114 @@ This is because we want to modify/replace elements as they are loaded.
   EcmElement.prototype.addDomElement = function (el) {
       return this.ECM.addDomElement(el, this)
   }
+
+  EcmElement.prototype.currentScript = document.currentScript;
+
+  EcmElement.prototype.pathExpand = function (postfix = '', path = false) {
+      const uri = path || this.currentScript.src.split('?')[0],
+  	  dir = path || uri.split('/').slice(0, -1).join('/')+'/'
+      
+      return dir + postfix;
+  }
+  
 #+end_src
+
+** =this.create=, a rational =document.createElement= helper
+:PROPERTIES:
+:CUSTOM_ID: thiscreate-a-rational-documentcreateelement-helper
+:END:
+
+#+begin_src js :noweb-ref EcmElement
+  EcmElement.prototype.create = function (thing, init = e => e) {
+      const el = document.createElement(thing),
+  	  ret = init(el);
+      
+      return ret || el;
+  }
+
+  EcmElement.prototype.createHTML = function (html, init = e => e) {
+      return this.create('div', div => {
+  	div.innerHTML = html;
+  	const child = div.firstElementChild
+  	child.remove()
+  	return child
+      })
+  }
+
+
+#+end_src
+
+** Link Up Object and Inputs
+:PROPERTIES:
+:CUSTOM_ID: link-up-object-and-inputs
+:END:
+
+I'm starting to understand ReactJS!
+
+I've got a form, I've got an object. The form is editing the object.
+
+
+#+begin_src js :noweb-ref EcmElement
+  // .linkForm : Edit an object
+
+  EcmElement.prototype.captureInputs = function(element, object) {
+      const el = element || this.element,
+  	  obj = object || {}
+      
+      el.querySelectorAll('input').forEach(i => {
+        // console.log('Capture change on ', i.name, i)
+  	if(i.name) {
+  	    i.addEventListener('change', e => { 
+  		obj[e.target.name] = e.target.value
+  		// console.log(`Changed ${e.target.name} to ${e.target.value}`, obj)
+  	    })
+  	}
+      })
+
+      return obj;
+  }
+
+
+  EcmElement.prototype.setInputs = function(element, object) {
+      const el = element || this.element,
+  	  obj = object || {},
+  	  handler = {
+  	      get(target, prop) {
+  		  const inp = el.querySelector(`[name="${prop}"`)
+                    if (inp && inp.type == 'checkbox') {
+  		      return inp.checked 
+  		  } else {
+  		      return inp ? inp.value : undefined
+  		  }
+  		  
+  	      },
+  	      set(target, prop, val) {
+  		  const inp = el.querySelector(`[name="${prop}"`)
+  		  if (inp) {
+  		      if (inp.type == 'checkbox') {
+  			  inp.checked = !!val
+  		      } else {
+  			  inp.value = val
+  		      }
+  		      return inp;
+  		  }
+  	      },
+  	      has(target, prop) {
+  		  return !!el.querySelector(`[name="${prop}"`)
+  	      }
+  	      
+  	  },
+  	  prox = new Proxy(el, handler);
+
+      for (const [key, value] of Object.entries(obj)) {
+  	if (value) { prox[key] = value }
+  	// console.log(`${key}: ${value}`);
+      }
+
+      return prox
+  }
+#+end_src
+
 
 ** =EcmDateTime=: ="date"=. ="time"= and ="datetime-local"=
 :PROPERTIES:
@@ -492,7 +1315,7 @@ https://flatpickr.js.org/
   	     showOn: "button",
   	     dateFormat: this.dateFormat,
               onSelect(date, dp) {
-                  console.log(date, self.parse(date))
+                  // console.log(date, self.parse(date))
                   self.Date = self.parse(date);
                   self.input.value = self.format(self.displayFormat)
   	     }
@@ -525,7 +1348,7 @@ https://flatpickr.js.org/
   }
 
   EcmDateTime.prototype.format = function (fmtStr) {
-      console.log('Format', fmtStr, this.Date, this.datepickerArgs) 
+      // console.log('Format', fmtStr, this.Date, this.datepickerArgs) 
      return $.datepicker.formatDate(fmtStr, this.Date, this.datepickerArgs)
   }
   EcmDateTime.prototype.initEvents = function () {
@@ -533,7 +1356,7 @@ https://flatpickr.js.org/
       const self = this
       $(this.input).on('keyup', function() { self.parseEvent() })
       $(this.input).on('change', function() {
-         console.log("change event", $(self.input).parent())
+         // console.log("change event", $(self.input).parent())
   	self.parseEvent()
   	$(self.input).parent().removeClass('uk-alert-success uk-alert-danger uk-alert-warning')
       })
@@ -648,7 +1471,7 @@ The parser. Gotten from https://github.com/kensnyder/any-date-parser
       this.Date = date
 
       if (date) {
-          console.log('parsed: ', date);
+          // console.log('parsed: ', date);
           $(wrapper).each((_, element) => UIkit.tooltip(element).hide())
   	$(wrapper).removeClass('uk-alert-warning').addClass('uk-alert-success')
   	    .attr('uk-tooltip', this.output.value)
@@ -668,7 +1491,7 @@ The parser. Gotten from https://github.com/kensnyder/any-date-parser
       <div data-ecm-datetime-wrapper class="uk-margin uk-inline uk-input">
                <a ecm-datetime-icon class="uk-form-icon uk-form-icon-flip" href="#" uk-icon="icon: link"></a>
                <input ecm-datetime-input class="uk-input" type="text">
-               <style> [data-ecm-datetime-wrapper] { position: relative }
+               <style> [data-ecm-datetime-wrapper] { }
                 [data-ecm-datetime-wrapper] .uk-input {
                     background: unset;
                     height: 38px;
@@ -702,484 +1525,6 @@ The parser. Gotten from https://github.com/kensnyder/any-date-parser
 :END:
 
 
-
-** =EcmSelect= dropdown select search autocomplete thing
-:PROPERTIES:
-:CUSTOM_ID: ecmselect-dropdown-select-search-autocomplete-thing
-:END:
-
-https://www.algolia.com/blog/engineering/how-to-implement-autocomplete-with-javascript-on-your-website/
-https://stackoverflow.com/questions/30797244/detecting-the-end-of-the-scrollable-drop-down
-
-https://codepen.io/mehuldesign/pen/eYpbXMg
-
-
-#+begin_src js :tangle ./spa/js/EcmSelect.js
-  function EcmSelect(select) {
-      const el = this.templateElement(),
-  	  parent = select.parentElement,
-  	  input = el.querySelector('form').querySelector('input'),
-  	  output =  el.querySelector('input'),
-  	  ul =  el.querySelector('form').querySelector('ul'),
-            display =  el.querySelector('form').querySelector('div'),
-            close = display.querySelector('.ecm-close'),
-  	  obj = this.selectToObject(select),
-  	  options = obj.options, self = this
-
-      EcmElement.call(this, el);
-      output.name = obj.name
-      el.style.position = 'relative'
-
-      select.replaceWith(el);
-
-      Object.assign(this, {
-  	element: el, output, input, display, ul, options
-      })
-
-      el.addEventListener('click', function(event) {
-  	const disp = ul.style.display, val = self.selectedOption,
-  	      hidden = disp !== 'block', hide = !hidden
-  	self.blurred = false;
-          event.stopPropagation() 
-          console.log("Clin on EL'=, hidden", hidden, ul.style.display,self.showUl, val, hide)
-  	ul.style.display = hide || val ? 'none' : 'block'
-      })
-      el.addEventListener('mouseleave', function () { self.blurred = false ;})
-      close.addEventListener('click', function (e) { e.stopPropagation() ;self.selectOption({value: false})})
-
-      ul.addEventListener('mouseover', () => { this.showUl = true; input.focus()})
-      ul.addEventListener('mouseleave', function () { self.showUl = false ; self.blurred = false})
-
-      // * The input type=text
-
-      input.addEventListener('click', event => { event.stopPropagation() ;})
-      input.addEventListener('focus',function () { ul.style.display = 'block'})
-      input.addEventListener('blur', function () {
-  	if (!self.showUl) {
-  	    ul.style.display = 'none'
-  	    self.blurred = true;
-  	}})
-
-      input.addEventListener('keydown', function (event) {
-  	event.stopPropagation() ;
-  	self.onKeyDown(this, event)
-      })
-      setTimeout(function test() {
-  	if (parent.contains(el)) {
-  	    input.style.height = '' + (el.offsetHeight - 2) + 'px'
-  	    
-  	} else {
-  	    setTimeout(test, 50);
-  	}
-      }, 50);
-      
-      // Object.assign(ul.style, {
-      // 	position: 'absolute', left: '2px', right: '3px',
-      //     border: '1px solid #dfe8f1', borderTop: '0px', borderRadius: '3px',
-      // 	margin: '0px', listStyle: 'outside none none',
-      //     boxShadow: '0 1px 24px 2px rgba(135, 158, 171, 0.2)',
-      // 	zIndex: 7, backgroundColor: '#fff', backgroundClip: "padding-box",
-      // })
-
-      obj.options.forEach(opt => {
-  	this.addOption(opt)
-      })
-
-
-  	
-       // console.log('o?', this.optionElement("foo"), el.offsetHeight)
-      this.ul.append(this.optionElement("foo"))
-
-      console.log('New EcmSelect', this)
-
-       if (!document.head.dataset.ecmSelectCss) {
-      	document.head.append(this.templateStyleElement())
-           document.head.dataset.ecmSelectCss = true
-      }
-
-      this.element = el
-      
-      
-      return this;
-  }
-
-  Object.setPrototypeOf(EcmSelect.prototype, EcmElement.prototype);
-
-  EcmSPA.prototype.initFunctions.EcmSelect = function (el) {
-      this.querySelectorAll(el, '[data-ecm-select]')
-  	.forEach(e => new EcmSelect(e)) 
-  }
-
-
-     
-  EcmSelect.prototype.onKeyDown = function (el, event) {
-      const arrow = (key) => {
-  	let idx = this.hoverIdx(),
-  	    opts = this.ul.childNodes,
-  	    len = opts.length
-  	key === 40 ? key = 'down' : key = 'up'
-
-  	if (key === 'down' && (idx + 1) < len) {
-  	    const li = opts[idx + 1]
-  	    this.addHover(li)
-              li.scrollIntoView()
-  	} else if (key === 'up' && (idx - 1 >= 0)) {
-  	    const li = opts[idx - 1]
-  	    this.addHover(li)
-              li.scrollIntoView()
-  	} else if (key === 'up') {
-              this.addHover(false)
-  	}
-
-              
-  	console.log('Hover', idx, ' opts ', opts)
-      }
-
-      if (event.which === 40 || event.which === 38) {
-  	arrow(event.which)
-      }
-  	
-
-
-
-
-  }
-      
-      
-  EcmSelect.prototype.selectToObject = (select) => {
-      return {
-    	name: select.name,
-            required: select.hasAttribute('required'),
-    	options: [... select.options].map(o => {
-    	    return obj = {
-    		value: o.value,
-    		text: o.text,
-    		selected: o.selected
-    	    }
-    	})
-      }
-  };
-
-  EcmSelect.prototype.selectedOption = false;
-
-  EcmSelect.prototype.selectOption = function (opt) {
-      this.selectedOption = opt;
-      const val = opt.value, close = this.display.querySelector('.ecm-close')
-      console.log("Selecting Option: ", opt, close)
-      this.display.textContent = ''
-      this.display.append(close);
-      if (val || typeof val === 'string') {
-  	this.output.value = val
-  	this.display.prepend(opt.text);
-          this.display.style.display = 'block'
-          
-      } else {
-  	this.output.removeAttribute('value');
-          this.display.style.display = 'none'
-          this.selectedOption = false
-      }
-      return opt
-  }
-  EcmSelect.prototype.selectOptionElement = function (el) {
-      const opt = {
-  	text: el.textContent,
-  	value: el.getAttribute("data-ecm-value")
-      }
-      this.selectOption(opt)
-      this.ul.style.display = 'none'
-      return opt
-  }
-
-
-  EcmSelect.prototype.hoverIdx = function () {
-      var idx = -1
-      
-      Array.from(this.ul.children).forEach((el, n) => {
-  	if (el.hasAttribute('data-ecm-hover')) idx = n;
-      })
-      return idx
-  }
-
-  EcmSelect.prototype.addHover = function (el) {
-      el && el.setAttribute('data-ecm-hover', '')
-      Array.from(this.ul.children).forEach(e => {
-  	if (el !== e) {
-  	    e.removeAttribute('data-ecm-hover')
-  	}
-      })
-  }
-
-  // EcmSelect.prototype.onKeyDown = function 
-  	    
-  EcmSelect.prototype.addOption = function (opt) {
-      const {text, value, selected} = opt
-      el = this.optionElement(text, value, selected),
-      ex = this.options.find(o => o.text === text),
-      self = this
-
-      console.log('added option', opt, el)
-      if (ex) { 
-  	Object.assign(ex, opt)
-      } else this.options.push(opt);
-      
-      el.addEventListener('mouseover',function () { self.addHover(this) })
-      el.addEventListener(
-  	  'mouseleave', function() { el.removeAttribute('data-ecm-hover')})
-      el.addEventListener('click', function(event) {
-  	event.stopPropagation()
-  	self.selectOptionElement(this)
-      })
-
-
-
-      this.ul.append(el)
-
-      return el
-  }
-
-
-
-
-  EcmSelect.prototype.template = `<div data-ecm-select-wrapper \
-   class="ecm-select uk-select"
-    ><input type="hidden"
-    ><form autocomplete="off"
-       ><div><a class="ecm-close" href="#"></a></div
-       ><input class='uk-input' type="text"
-       ><ul class="ecm-options" tabindex="0"></ul
-    ></form
-   ></div>`;
-
-  EcmSelect.prototype.templateElement = function(tpl = false) {
-      const el = document.createElement('div')
-      el.innerHTML = tpl || this.template;
-      return el.firstElementChild;
-  }
-
-
-  EcmSelect.prototype.optionElement = function (txt, value, selected) {
-      const li = document.createElement('li'),
-  	  a = document.createElement('a')
-      if (selected) {
-  	a.innerHTML = `<span style="position: absolute; left:4px ; top: 0.5em"
-            uk-tooltip="Default value" uk-icon="check">&nbsp;</span>`
-      }
-      a.append(txt || "\u00A0")
-      if (value || typeof value === 'string') {
-  	li.setAttribute('data-ecm-value', value)
-      }
-
-      li.append(a)
-      return li
-  }
-
-  EcmSelect.prototype.templateStyle = `
-   .ecm-select { position:relative; z-index: 1}
-
-    .ecm-select input {
-      background: unset;
-      height: 38px;
-      vertical-align: unset;
-      border: 0px;
-   }
-
-       .ecm-options{
-         background-clip: padding-box;
-         background-color: #fff;
-         border: 1px solid #dfe8f1;
-         border-top: unset;
-         border-radius: 3px;
-         box-shadow: 0 1px 7px 2px rgba(135, 158, 171, 0.2);
-         display: none;
-         padding: 0 0 10px;
-         position: absolute;
-         z-index: 0; 
-         float: left;
-         list-style: outside none none; max-height:220px; overflow:scroll;
-         margin:0px;
-         left:0px;
-         right:0px;
-         
-       }
-       ul.ecm-options li a {
-         padding-left: 2em;
-         cursor: pointer;
-         white-space: nowrap;
-         text-overflow: ellipsis;
-         overflow: hidden;
-         color: #4c4c4c;
-         text-decoration: none;
-         outline: 0;
-       }
-      ul.ecm-options li[data-ecm-hover] {
-       background: none repeat scroll 0 0 #eff4f6;
-       cursor: pointer;
-       text-decoration: underline;
-       color: #1e87f0;
-      }
-
-   .ecm-select form div  {
-     position: absolute;
-     top: 0px; right:0px; left: 0px; bottom: 0px;
-     background: #f8f8f8;
-     color: #666;
-     display: none;
-     padding-left: 1em;
-   } 
-   .ecm-select form div a {
-      float: right; 
-  	-webkit-appearance: none;
-  	-moz-appearance: none;
-  	width: 1em;
-  	height: 100%;
-  	margin: auto;
-  	margin-right: 0.5em;
-          background-image: url("data:image/svg+xml;charset=utf8,%3Csvg viewBox='0 0 14 14' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath stroke='rgba(25,25, 25, 1)' stroke-width='1' stroke-linecap='round' stroke-miterlimit='10' d='M1 1 L14 14 M1 14 L14 1'/%3E%3C/svg%3E");
-  	background-repeat: no-repeat;
-  	background-position: 100% 50%;
-    }
-
-    [data-ecm-select-display] a:hover {
-       cursor: pointer;
-       text-decoration: underline;
-       color: #1e87f0; width: 1.33em;
-      }
-
-  `;
-
-  EcmSelect.prototype.templateStyleElement = function (css) {
-      const style = document.createElement('style')
-      style.append(css || this.templateStyle)
-      return style;
-  }
-   
-#+end_src
-      
-
-*** =this.selected=: Select "option" property
-:PROPERTIES:
-:CUSTOM_ID: thisselected-select-option-property
-:END:
-
-#+begin_src js :noweb-ref ecm-auto
-
-  Object.defineProperty(EcmAutoComplete.prototype, 'selected', {
-      get() { return this.selectedElement },
-      set(v) {
-  	 this.selectedElement = v;
-           const disp = v && v.firstChild && v.firstChild.firstChild
-  		 ? v.firstChild.firstChild.cloneNode(true) : " " //v.firstChild.cloneNode(true) : false
-           console.log('settong', v, disp)
-          $(this.optionsUl).hide()
-  	 if (!v) {
-  	     $(this.display).css('z-index', '-42')
-  		 .hide().contents().filter((n) =>  n > 0 ).remove()
-  	     $(this.input).css('z-index', 'auto')
-  	 } else {
-               
-  	     $(this.input).css('z-index', '-42')
-  	    // $(this.display).css('z-index', 'auto')
-  	     $(this.display).show().css('z-index', 'auto').append(disp)
-  	 }
-  	 return v
-      }
-  });
-#+end_src
-
-
-*** Default Static Select
-:PROPERTIES:
-:CUSTOM_ID: default-static-select
-:END:
-
-The idea here is that a =<select>= becomes an =EcmAutoComplete=
-without any effort on our side.
-
-#+begin_src js :noweb-ref ecm-auto
-  EcmAutoComplete.prototype.selectToObject = (select) => {
-    return {
-  	name: select.name,
-          required: $(select).attr('required'),
-  	options: [... select.options].map(o => {
-  	    return obj = {
-  		value: o.value,
-  		text: o.text,
-  		selected: o.selected
-  	    }
-  	})
-    }
-  };
-#+end_src
-
-That select turns into our select.
-
-#+begin_src js :noweb-ref ecm-auto
-
-              EcmAutoComplete.prototype.elementHtml = `
-                 <div data-ecm-select-wrapper class="ecm-select uk-select">
-                  <input type="hidden" data-ecm-select-out>
-                  <form autocomplete="off">
-                  <div data-ecm-select-display><a class="ecm-close" href="#"></a></div>
-                   <input class='uk-input' type="text" data-ecm-select-text>
-                   <ul class="ecm-options" data-ecm-options></ul>
-                  </form>
-                 </div>`;
-
-                EcmAutoComplete.prototype.makeEmptyElement = function(html = false) {
-                 const edoc = new DOMParser().parseFromString(html || this.elementHtml, "text/html"),
-                       child = edoc.body.firstChild
-                    return child;
-                }
-#+end_src
-
-
-So just need a way to put them together.
-
-#+begin_src js :noweb-ref ecm-auto
-  EcmAutoComplete.prototype.optionsUl = false;
-  EcmAutoComplete.prototype.addOptions = function (opts) {
-      const ul = this.optionsUl 
-      var list = ''
-      
-      for (i=0; i<opts.length; i++) {
-  	list += '<li data-ecm-option'
-  	    + ((val = opts[i].value) => {
-  	      if (val) {
-  		  return '="' + val + '"';
-  	      } else  { return '' }
-  	  })()
-  	    + '><a href="#">'+opts[i].text+'</a></li>'
-  	if (opts[i].selected) this.selected = opts[i]
-      }
-
-      ul.innerHTML = ul.innerHTML + list
-  }
-
-
-  	    
-  EcmAutoComplete.prototype.makeElement = function (name = '', opts = [], html = false) {
-      const el = this.makeEmptyElement(html)
-      console.log('el', el)
-      $(el).find('[data-ecm-select-name]').each((_, e) => {
-  	this.nameInput = e
-  	e.setAttribute('name', name)
-      });
-      $(el).find('[data-ecm-select-text]').each((_, e)  => { this.textInput = e });
-      $(el).find('[data-ecm-options]').each((_, e) => {
-  	this.optionsUl = e
-  	this.addOptions(opts)
-      });
-     this.options = opts
-     console.log('el', el, ' opts ', this.options)
-  return el;
-  };
-
-  EcmAutoComplete.prototype.makeElementFromSelect = function (sel, html = false) {
-   const {name, options} = this.selectToObject(sel)
-
-   return this.makeElement(name, options)
-  }
-#+end_src
 
 
 ** The css style
@@ -1291,7 +1636,7 @@ So just need a way to put them together.
 :PROPERTIES:
 :CUSTOM_ID: the-rest-of-indexjs
 :END:
-#+begin_src js :tangle ./spa/js/index.js :noweb yes
+#+begin_src js :tangle ./js/index.js :noweb yes
   <<EcmElement>>
 
       
@@ -1324,13 +1669,13 @@ So just need a way to put them together.
       let lis = $(this.optionsUl).find('li'),
   	len = lis.length - 1, idx = -1, e = event
      // event.stopPropagation();
-     console.log('keydown')
+     // console.log('keydown')
       if (event.which === 40 || event.which === 38) {
   	$(lis).each((n, e) => {
   	    if(e.hasAttribute('data-ecm-selected')) {
-                  console.log('idx', n)
+                  // console.log('idx', n)
   	 	e.removeAttribute('data-ecm-selected')
-                  console.log('idx', n, e)
+                  // console.log('idx', n, e)
   	 	idx = n
   	    }
   	})
@@ -1353,7 +1698,7 @@ So just need a way to put them together.
               li.setAttribute('data-ecm-selected', '')
               li.scrollIntoView()
   	} else if (event.which === 13) {
-              console.log("Return!", $(lis).filter('[data-ecm-selected]'))
+              // console.log("Return!", $(lis).filter('[data-ecm-selected]'))
   	    $(lis).filter('[data-ecm-selected]').each((_, e) => {
   		this.selected = e
   	    })
@@ -1369,17 +1714,18 @@ So just need a way to put them together.
 
       $(this.display).on('click',  e => { console.log('clicked display');  e.stopPropagation(); e.preventDefault()})
       $(this.display).find('a').first().on('click', _ => this.selected = false)
-      console.log('Got input', this.input)
+      // console.log('Got input', this.input)
       
       $(this.input).on("keyup", event => {
         if (event.which === 40 || event.which === 38 || event.which === 13) { return }
-        console.log('Where are we now?',  this.showResults(this.input.value) )})
+  	this.showResults(this.input.value)
+      })
       $(this.input).on("blur", event => { $(this.optionsUl).hide() })
 
       $(this.optionsUl).on('mouseover', e => {
          const hli = $(e.target).parents('li').get(0)
 
-        console.log('Monuseose==cver', $(e.target).parents('li'), e.target)
+        // console.log('Monuseose==cver', $(e.target).parents('li'), e.target)
   	$(e.currentTarget).find('li').each((_, li) => {
                if (hli == li) {
   		 li.setAttribute('data-ecm-selected', true)
@@ -1394,63 +1740,16 @@ So just need a way to put them together.
   	
       $(this.element).on('keydown', e => this.onKeyDown(e));
       $(this.optionsUl).on('keydown', e => this.onKeyDown(e));
-      $(this.element).on("keydowna", e => {
-  	let lis = $(this.optionsUl).find('li'),
-  	      len = lis.length - 1, idx = -1
-  	 if (event.which === 40 || event.which === 38) {
-  	     $(lis).each((n, e) => {
-                 console.log('n', n, ' e', e)
-  	 	if(e.hasAttribute('data-ecm-selected')) {
-                      console.log('idx', n)
-  	 	    e.removeAttribute('data-ecm-selected')
-                      console.log('idx', n, e)
-  	 	    idx = n
-  	 	}
-  	     })
-  	 }
-          
-  	  if (event.which === 40) {
-  	    // downarrow
-              if (idx !== len) {
-               idx++;  $(this.optionsUl).show()
-              }
-              const li = lis[idx]
-              li.setAttribute('data-ecm-selected', '')
-              li.scrollIntoView()
-  	} else if (event.which === 38) {
-  	    // uparrow
-              if (idx > 0) {
-               idx--
-              } else { return }
-              const li = lis[idx]
-              li.setAttribute('data-ecm-selected', '')
-              li.scrollIntoView()
-  	} else if (event.which === 13) {
-              console.log("Return!", $(lis).filter('[data-ecm-selected]'))
-  	    $(lis).filter('[data-ecm-selected]').each((_, e) => {
-  		this.selected = e
-  	    })
-  						      	    
-  	}
-   
-      })
 
-  	
+  	$(element).on("click",function(event){
+    	    $(element).find('.ecm-options').toggle();
+  	});
 
-  	
-  	
-  	
-  	
-  	      
-
-    $(element).on("click",function(event){
-    	   $(element).find('.ecm-options').toggle();
-    });
-
-  }
+      }
+  		    
 
    EcmAutoComplete.prototype.autocompleteMatch = function (input) {
-     // console.log('Matching', input, this.options)
+     console.log('Matching', input, this.options)
       if (input == '') {
   	return [];
       }

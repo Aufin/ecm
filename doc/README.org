@@ -1,0 +1,9 @@
+#+TITLE: Documentation
+
+Though ECM is mostly literate there's still a need for docs that do
+not quite fit within the source tree catagories
+
+The most relevant one is [[file:xlsx-reporting-standards-lloyds-claims-template-V52.xlsx][Lloyd's Claim Reporting Template]] and the [[file:pdf-reporting-standards-lloyds-coverholder-reporting-standards-user-guide-V52.pdf][PDF
+describing it]].
+
+

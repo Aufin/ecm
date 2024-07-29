@@ -1,0 +1,12 @@
+:PROPERTIES:
+:ID:       2977228f-8732-4e86-ae49-f5f570f37965
+:END:
+#+title: Attachments
+
+
+Attachments are all "stored" on one box.
+
+#+begin_src sh
+  sudo mkdir -p /srv/ecm/attachments/
+  sshfs
+#+end_src

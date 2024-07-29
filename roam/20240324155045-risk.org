@@ -1,0 +1,53 @@
+:PROPERTIES:
+:ID:       e9f805e7-9377-4091-9f3b-9b4769bbd2d9
+:END:
+#+title: Risk
+
+All risks have a [[id:a35a976e-53ef-4f50-97e3-af8c7da513ec][Contract]]
+
+* Database
+#+begin_src sql
+#+end_src
+#+PROPERTY: header-args:sql :engine postgres :cmdline "\"host=db.ecm.lan port=5432 user=maxclaims dbname=maxclaims\""
+
+  #+BEGIN_SRC sql :results code :exports none
+  select pg_get_functiondef(oid)||';' AS " "
+  from pg_proc
+  where proname = 'risk_crux';
+  #+END_SRC
+
+  #+RESULTS:
+  #+begin_src sql
+
+     CREATE OR REPLACE FUNCTION jsi.risk_crux(risk_id integer)
+      RETURNS json
+      LANGUAGE sql
+     AS $function$
+          SELECT jsi.risk_crux(risk) FROM risk WHERE risk_id = $1 ;
+       $function$
+     ;
+     CREATE OR REPLACE FUNCTION jsi.risk_crux(risk)
+      RETURNS json
+      LANGUAGE sql
+     AS $function$
+          SELECT pongo.json_strip_nulls(json_build_object(
+    	  '_type', 'risk-crux',
+    	  '_id', $1.risk_id,
+    	  'risk_type', $1.risk_type_name,
+    	  'risk_code', jsi.risk_code_summary($1.risk_code),
+    	  'risk_number', $1.risk_number,
+    	  'policy', jsi.policy_summary($1.policy_id), 
+    	  'contract', jsi.contract_summary($1.contract_id),
+    	  'london_broker',
+    	  (jsi.contract_summary($1.contract_id))->'london_broker',
+    	  'claims', (SELECT json_agg(jsi.risk_claim_summary(claim))
+    		     FROM (SELECT * FROM claim WHERE risk_id = $1.risk_id ORDER BY claim_id) AS claim)
+    	 )) ;
+         $function$
+     ;
+  #+end_src
+
+  #+RESULTS:
+  | CREATE FUNCTION |
+  |-----------------|
+  | CREATE FUNCTION |

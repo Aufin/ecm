@@ -1,0 +1,34 @@
+#+TITLE: Database: The central meeting place
+
+
+
+* The connection pool(s)
+
+#+begin_src scheme :tangle ./www/db.ss
+  (import :std/db/conpool
+          :std/db/postgresql
+  	:std/db/dbi
+  	:std/sugar)
+  (export #t)
+
+  (def (make-pgpool user: (role "maxclaims") (max #f))
+    (make-conpool
+     (cut sql-connect postgresql-connect
+          host: "maxbakuntu.lan" ssl: #f user: role db: "maxclaims")
+     max))
+
+  (def ecm-conpool (make-pgpool))
+
+  (def current-db-conpool (make-parameter ecm-conpool))
+
+  (def (ecm-sql sql-fn . args)
+    (def err #f)
+    (def pool (current-db-conpool))
+    (def con (conpool-get pool 5))
+    (try
+     (apply sql-fn con args)
+     (catch (e) (set! err e))
+     (finally
+      (if err (begin (conpool-release pool con) (raise err))
+          (conpool-put pool con)))))
+#+end_src

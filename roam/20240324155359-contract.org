@@ -1,0 +1,44 @@
+:PROPERTIES:
+:ID:       a35a976e-53ef-4f50-97e3-af8c7da513ec
+:END:
+#+title: Contract
+
+#+PROPERTY: header-args:sql :engine postgres :cmdline "\"host=db.ecm.lan port=5432 user=maxclaims dbname=maxclaims\""
+
+  #+BEGIN_SRC sql :results code :exports none
+  select pg_get_functiondef(oid)||';' AS " "
+  from pg_proc
+  where proname = 'contract_summary';
+  #+END_SRC
+
+  #+RESULTS:
+  #+begin_src sql
+
+  CREATE OR REPLACE FUNCTION jsi.contract_summary(contract_id integer)
+   RETURNS json
+   LANGUAGE sql
+  AS $function$
+     SELECT jsi.contract_summary(contract) FROM contract WHERE contract_id = $1 ;
+  $function$
+  ;
+  CREATE OR REPLACE FUNCTION jsi.contract_summary(contract)
+   RETURNS json
+   LANGUAGE sql
+  AS $function$
+
+     SELECT pongo.json_strip_nulls(json_build_object(
+       '_type', 'contract_summary',
+       '_id', $1.contract_id,
+       'contract_number', $1.contract_number, 
+       'effective_date', $1.effective_date::date,
+       'expiry_date', $1.expiry_date::date, 
+       'agency', jsi.corpus_summary($1.agency_id),
+       'insurance_company', jsi.corpus_summary($1.insurance_company_id),
+       'syndicate', jsi.corpus_summary($1.syndicate_id),
+       'london_broker', jsi.corpus_summary($1.london_broker_id),
+       'authority', (SELECT jsi.price(ca.authority) FROM contract_authority AS ca
+		      WHERE contract_id = $1.contract_id)
+      ));
+  $function$
+  ;
+  #+end_src

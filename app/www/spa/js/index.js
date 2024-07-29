@@ -39,6 +39,9 @@ function EcmSPA () {
 }
 
 // =.querySelector= mostly to find data attributes
+// :PROPERTIES:
+// :CUSTOM_ID: queryselector-mostly-to-find-data-attributes
+// :END:
 
 // This is because we want to modify/replace elements as they are loaded.
 
@@ -49,6 +52,31 @@ EcmSPA.prototype.querySelectorAll = function(el, ... sels){
   return [... selThis ? [el] : [], ... selC]
 }
 
+// Get/Set cookies
+
+
+EcmSPA.prototype.setCookie = function (cname, cvalue, exdays) {
+  const d = new Date();
+  d.setTime(d.getTime() + (exdays * 24 * 60 * 60 * 1000));
+  let expires = "expires="+d.toUTCString();
+  document.cookie = cname + "=" + cvalue + ";" + expires + ";path=/";
+}
+
+EcmSPA.prototype.getCookie = function (cname) {
+  let name = cname + "=";
+  let ca = document.cookie.split(';');
+  for(let i = 0; i < ca.length; i++) {
+    let c = ca[i];
+    while (c.charAt(0) == ' ') {
+      c = c.substring(1);
+    }
+    if (c.indexOf(name) == 0) {
+      return c.substring(name.length, c.length);
+    }
+  }
+  return "";
+}
+
 // Initialize an element
 // :PROPERTIES:
 // :CUSTOM_ID: initialize-an-element
@@ -57,6 +85,7 @@ EcmSPA.prototype.querySelectorAll = function(el, ... sels){
 
 EcmSPA.prototype.initFunctions = {}
 EcmSPA.prototype.initElement = function(el) {
+    // console.warn("Init fns?", this.initFunctions, this)
     Object.values(this.initFunctions).forEach(init => {
 	init.call(this, el)
     })
@@ -85,13 +114,14 @@ EcmSPA.prototype.loadElement = function(name, use_cache = true){
 
 // =replaceElement= Replace an element
 // :PROPERTIES:
-// :CUSTOM_ID: replace-an-element
+// :CUSTOM_ID: replaceelement-replace-an-element
 // :END:
 
 
 EcmSPA.prototype.replaceElement = function(from, to, use_cache = true){
    return this.loadElement(to, use_cache).then(e => {
       from.replaceWith(e)
+      this.fixScriptsSoTheyAreExecuted(e)
       return e
     })
 }
@@ -102,6 +132,9 @@ EcmSPA.prototype.initFunctions.ecm_replace = function (el) {
 }
 
 // =.loadScript= Dynamic Loading of JavaScript files
+// :PROPERTIES:
+// :CUSTOM_ID: loadscript-dynamic-loading-of-javascript-files
+// :END:
 
 
 EcmSPA.prototype.loadScript = function (src) {
@@ -167,6 +200,91 @@ EcmElement.prototype.addDomElement = function (el) {
     return this.ECM.addDomElement(el, this)
 }
 
+EcmElement.prototype.currentScript = document.currentScript;
+
+EcmElement.prototype.pathExpand = function (postfix = '', path = false) {
+    const uri = path || this.currentScript.src.split('?')[0],
+	  dir = path || uri.split('/').slice(0, -1).join('/')+'/'
+    
+    return dir + postfix;
+}
+
+EcmElement.prototype.create = function (thing, init = e => e) {
+    const el = document.createElement(thing),
+	  ret = init(el);
+    
+    return ret || el;
+}
+
+EcmElement.prototype.createHTML = function (html, init = e => e) {
+    return this.create('div', div => {
+	div.innerHTML = html;
+	const child = div.firstElementChild
+	child.remove()
+	return child
+    })
+}
+
+
+// .linkForm : Edit an object
+
+EcmElement.prototype.captureInputs = function(element, object) {
+    const el = element || this.element,
+	  obj = object || {}
+    
+    el.querySelectorAll('input').forEach(i => {
+      // console.log('Capture change on ', i.name, i)
+	if(i.name) {
+	    i.addEventListener('change', e => { 
+		obj[e.target.name] = e.target.value
+		// console.log(`Changed ${e.target.name} to ${e.target.value}`, obj)
+	    })
+	}
+    })
+
+    return obj;
+}
+
+
+EcmElement.prototype.setInputs = function(element, object) {
+    const el = element || this.element,
+	  obj = object || {},
+	  handler = {
+	      get(target, prop) {
+		  const inp = el.querySelector(`[name="${prop}"`)
+                  if (inp && inp.type == 'checkbox') {
+		      return inp.checked 
+		  } else {
+		      return inp ? inp.value : undefined
+		  }
+		  
+	      },
+	      set(target, prop, val) {
+		  const inp = el.querySelector(`[name="${prop}"`)
+		  if (inp) {
+		      if (inp.type == 'checkbox') {
+			  inp.checked = !!val
+		      } else {
+			  inp.value = val
+		      }
+		      return inp;
+		  }
+	      },
+	      has(target, prop) {
+		  return !!el.querySelector(`[name="${prop}"`)
+	      }
+	      
+	  },
+	  prox = new Proxy(el, handler);
+
+    for (const [key, value] of Object.entries(obj)) {
+	if (value) { prox[key] = value }
+	// console.log(`${key}: ${value}`);
+    }
+
+    return prox
+}
+
     
 function EcmAutoComplete (args, replace = false) {
     const self = this;
@@ -197,13 +315,13 @@ EcmAutoComplete.prototype.onKeyDown = function (event) {
     let lis = $(this.optionsUl).find('li'),
 	len = lis.length - 1, idx = -1, e = event
    // event.stopPropagation();
-   console.log('keydown')
+   // console.log('keydown')
     if (event.which === 40 || event.which === 38) {
 	$(lis).each((n, e) => {
 	    if(e.hasAttribute('data-ecm-selected')) {
-                console.log('idx', n)
+                // console.log('idx', n)
 	 	e.removeAttribute('data-ecm-selected')
-                console.log('idx', n, e)
+                // console.log('idx', n, e)
 	 	idx = n
 	    }
 	})
@@ -226,7 +344,7 @@ EcmAutoComplete.prototype.onKeyDown = function (event) {
             li.setAttribute('data-ecm-selected', '')
             li.scrollIntoView()
 	} else if (event.which === 13) {
-            console.log("Return!", $(lis).filter('[data-ecm-selected]'))
+            // console.log("Return!", $(lis).filter('[data-ecm-selected]'))
 	    $(lis).filter('[data-ecm-selected]').each((_, e) => {
 		this.selected = e
 	    })
@@ -242,17 +360,18 @@ EcmAutoComplete.prototype.init = function (element) {
 
     $(this.display).on('click',  e => { console.log('clicked display');  e.stopPropagation(); e.preventDefault()})
     $(this.display).find('a').first().on('click', _ => this.selected = false)
-    console.log('Got input', this.input)
+    // console.log('Got input', this.input)
     
     $(this.input).on("keyup", event => {
       if (event.which === 40 || event.which === 38 || event.which === 13) { return }
-      console.log('Where are we now?',  this.showResults(this.input.value) )})
+	this.showResults(this.input.value)
+    })
     $(this.input).on("blur", event => { $(this.optionsUl).hide() })
 
     $(this.optionsUl).on('mouseover', e => {
        const hli = $(e.target).parents('li').get(0)
 
-      console.log('Monuseose==cver', $(e.target).parents('li'), e.target)
+      // console.log('Monuseose==cver', $(e.target).parents('li'), e.target)
 	$(e.currentTarget).find('li').each((_, li) => {
              if (hli == li) {
 		 li.setAttribute('data-ecm-selected', true)
@@ -267,63 +386,16 @@ EcmAutoComplete.prototype.init = function (element) {
 	
     $(this.element).on('keydown', e => this.onKeyDown(e));
     $(this.optionsUl).on('keydown', e => this.onKeyDown(e));
-    $(this.element).on("keydowna", e => {
-	let lis = $(this.optionsUl).find('li'),
-	      len = lis.length - 1, idx = -1
-	 if (event.which === 40 || event.which === 38) {
-	     $(lis).each((n, e) => {
-               console.log('n', n, ' e', e)
-	 	if(e.hasAttribute('data-ecm-selected')) {
-                    console.log('idx', n)
-	 	    e.removeAttribute('data-ecm-selected')
-                    console.log('idx', n, e)
-	 	    idx = n
-	 	}
-	     })
-	 }
-        
-	  if (event.which === 40) {
-	    // downarrow
-            if (idx !== len) {
-             idx++;  $(this.optionsUl).show()
-            }
-            const li = lis[idx]
-            li.setAttribute('data-ecm-selected', '')
-            li.scrollIntoView()
-	} else if (event.which === 38) {
-	    // uparrow
-            if (idx > 0) {
-             idx--
-            } else { return }
-            const li = lis[idx]
-            li.setAttribute('data-ecm-selected', '')
-            li.scrollIntoView()
-	} else if (event.which === 13) {
-            console.log("Return!", $(lis).filter('[data-ecm-selected]'))
-	    $(lis).filter('[data-ecm-selected]').each((_, e) => {
-		this.selected = e
-	    })
-						      	    
-	}
- 
-    })
 
-	
+	$(element).on("click",function(event){
+  	    $(element).find('.ecm-options').toggle();
+	});
 
-	
-	
-	
-	
-	      
-
-  $(element).on("click",function(event){
-  	   $(element).find('.ecm-options').toggle();
-  });
-
-}
+    }
+		    
 
  EcmAutoComplete.prototype.autocompleteMatch = function (input) {
-   // console.log('Matching', input, this.options)
+   console.log('Matching', input, this.options)
     if (input == '') {
 	return [];
     }
@@ -357,7 +429,7 @@ Object.defineProperty(EcmAutoComplete.prototype, 'selected', {
 	 this.selectedElement = v;
          const disp = v && v.firstChild && v.firstChild.firstChild
 		 ? v.firstChild.firstChild.cloneNode(true) : " " //v.firstChild.cloneNode(true) : false
-         console.log('settong', v, disp)
+         // console.log('settong', v, disp)
         $(this.optionsUl).hide()
 	 if (!v) {
 	     $(this.display).css('z-index', '-42')
@@ -424,7 +496,7 @@ EcmAutoComplete.prototype.addOptions = function (opts) {
 	    
 EcmAutoComplete.prototype.makeElement = function (name = '', opts = [], html = false) {
     const el = this.makeEmptyElement(html)
-    console.log('el', el)
+    // console.log('el', el)
     $(el).find('[data-ecm-select-name]').each((_, e) => {
 	this.nameInput = e
 	e.setAttribute('name', name)
@@ -435,7 +507,7 @@ EcmAutoComplete.prototype.makeElement = function (name = '', opts = [], html = f
 	this.addOptions(opts)
     });
    this.options = opts
-   console.log('el', el, ' opts ', this.options)
+   // console.log('el', el, ' opts ', this.options)
 return el;
 };
 
@@ -584,7 +656,7 @@ function EcmDateTime(el, args = {}) {
 	     showOn: "button",
 	     dateFormat: this.dateFormat,
             onSelect(date, dp) {
-                console.log(date, self.parse(date))
+                // console.log(date, self.parse(date))
                 self.Date = self.parse(date);
                 self.input.value = self.format(self.displayFormat)
 	     }
@@ -617,7 +689,7 @@ EcmDateTime.prototype.defaultArgs = {
 }
 
 EcmDateTime.prototype.format = function (fmtStr) {
-    console.log('Format', fmtStr, this.Date, this.datepickerArgs) 
+    // console.log('Format', fmtStr, this.Date, this.datepickerArgs) 
    return $.datepicker.formatDate(fmtStr, this.Date, this.datepickerArgs)
 }
 EcmDateTime.prototype.initEvents = function () {
@@ -625,7 +697,7 @@ EcmDateTime.prototype.initEvents = function () {
     const self = this
     $(this.input).on('keyup', function() { self.parseEvent() })
     $(this.input).on('change', function() {
-       console.log("change event", $(self.input).parent())
+       // console.log("change event", $(self.input).parent())
 	self.parseEvent()
 	$(self.input).parent().removeClass('uk-alert-success uk-alert-danger uk-alert-warning')
     })
@@ -720,7 +792,7 @@ EcmDateTime.prototype.parseEvent = function() {
     this.Date = date
 
     if (date) {
-        console.log('parsed: ', date);
+        // console.log('parsed: ', date);
         $(wrapper).each((_, element) => UIkit.tooltip(element).hide())
 	$(wrapper).removeClass('uk-alert-warning').addClass('uk-alert-success')
 	    .attr('uk-tooltip', this.output.value)
@@ -733,7 +805,7 @@ EcmDateTime.prototype.parseEvent = function() {
  <div data-ecm-datetime-wrapper class="uk-margin uk-inline uk-input">
           <a ecm-datetime-icon class="uk-form-icon uk-form-icon-flip" href="#" uk-icon="icon: link"></a>
           <input ecm-datetime-input class="uk-input" type="text">
-          <style> [data-ecm-datetime-wrapper] { position: relative }
+          <style> [data-ecm-datetime-wrapper] { }
            [data-ecm-datetime-wrapper] .uk-input {
                background: unset;
                height: 38px;
@@ -756,15 +828,46 @@ EcmDateTime.prototype.makeElement = function(html = false) {
     return child;
 }      
 
+
+EcmSPA.prototype.currentScript = document.currentScript;
+
+EcmSPA.prototype.pathExpand = function (postfix = '', path = false) {
+    const uri = path || this.currentScript.src.split('?')[0],
+	  dir = path || uri.split('/').slice(0, -1).join('/')+'/'
+    
+    return dir + postfix;
+}
+
+ EcmSPA.prototype.fixScriptsSoTheyAreExecuted = (el) => {
+var scripts = el.querySelectorAll('script'),
+    script, fixedScript, i, len;
+
+for (i = 0, len = scripts.length; i < len; i++) {
+  script = scripts[i];
+
+  fixedScript = document.createElement('script');
+  // console.log(script)
+  fixedScript.type = script.type;
+  fixedScript.innerHTML = script.innerHTML;
+  script.src ? fixedScript.src = script.src : false;
+  script.onload ? fixedScript.onload = script.onload : false;
+  fixedScript.async = false;
+
+  script.parentNode.replaceChild(fixedScript, script);
+}
+}
+
 window.addEventListener("load", (event) => {
     const ECM =  new EcmSPA();
     globalThis.ECM = ECM
 
+    ECM.body = document.querySelector("#EcmSPA")
 
-    ECM.loadScript('EcmSelect.js').then(_ => {
- 	ECM.loadElement('/main.html').then(main => {
-	    const body = document.querySelector("#EcmSPA")
-	    body.replaceChildren(main)
+    ECM.loadScript(ECM.pathExpand('EcmSelect.js')).then(_ => {
+ 	ECM.loadElement(ECM.body.dataset.uri).then(main => {
+	    ECM.body.replaceChildren(main)
+            ECM.fixScriptsSoTheyAreExecuted(main)
+          
 	})
     })
 });

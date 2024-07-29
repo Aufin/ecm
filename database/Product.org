@@ -1,0 +1,37 @@
+There's a product map
+
+
+#+PROPERTY: header-args:sql :engine postgres :cmdline "\"host=db.ecm.lan port=5432 user=maxclaims dbname=maxclaims\""
+
+#+begin_src sql
+  DROP TABLE product;
+  CREATE TABLE product (
+   product_id SERIAL PRIMARY KEY,
+   party TEXT,
+   country TEXT,
+   product TEXT,
+   line_of_business TEXT,
+   class_of_business TEXT,
+   osfi TEXT,
+   member_product_program TEXT,
+   UNIQUE(product_id, party,country,
+         product,line_of_business,class_of_business, osfi, member_product_program)
+  );
+
+
+   
+   
+#+end_src
+
+
+#+begin_src sql
+    COPY product(party,country,
+           product,line_of_business,
+           class_of_business, osfi, member_product_program)
+    FROM '/tmp/Soplex Product Map.csv'
+    DELIMITER ',' CSV HEADER;
+
+#+end_src
+#+RESULTS:
+| COPY 133 |
+|----------|

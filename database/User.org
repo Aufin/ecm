@@ -1,0 +1,305 @@
+:PROPERTIES:
+:TOC:      :include all :depth 4
+:END:
+#+TITLE: Users: Application users AND DB roles mixed
+
+Local:
+#+PROPERTY: header-args:sql :engine postgres :cmdline "\"host=maxbakuntu.lan port=5432 user=maxclaims dbname=maxclaims\""
+
+Live: #+PROPERTY: header-args:sql :engine postgres :cmdline "\"host=ecm.maxwellclaims.net port=5432 user=maxclaims dbname=maxclaims\""
+
+* Table of Contents
+:PROPERTIES:
+:TOC:      :include siblings :depth 5 :ignore (this)
+:CUSTOM_ID: table-of-contents
+:END:
+
+
+:CONTENTS:
+- [[#current-overview][Current overview]]
+- [[#what-the-database-says][What the database says]]
+- [[#function-user_role][Function user_role]]
+- [[#function-user_to_json][Function user_to_json]]
+- [[#app-user-contractagencysyndicate][App User Contract/Agency/Syndicate]]
+:END:
+
+Like almost everything in ECM this is all over the place :)
+
+* Current overview
+:PROPERTIES:
+:CUSTOM_ID: current-overview
+:END:
+
+The =user_to_json= function seems to be the now/future access point. Defined [[#function-user_to_json][here.]]
+
+
+* What the database says
+:PROPERTIES:
+:CUSTOM_ID: what-the-database-says
+:END:
+
+  #+BEGIN_SRC sql :results code :exports none
+      select pg_get_functiondef(oid) AS " "
+      from pg_proc
+      where proname = 'user_summary'
+       OR proname = 'user_to_json' ;
+  #+END_SRC
+
+  #+RESULTS:
+  #+begin_src sql
+
+  CREATE OR REPLACE FUNCTION jsi.user_summary(integer)
+   RETURNS json
+   LANGUAGE sql
+  AS $function$
+    SELECT jsi.user_summary(app_user) 
+     FROM app_user WHERE app_user_id = $1
+  $function$
+
+  CREATE OR REPLACE FUNCTION jsi.user_summary(app_user)
+   RETURNS json
+   LANGUAGE sql
+  AS $function$
+   SELECT json_build_object(
+      '_type', 'user-summary',
+      '_id', $1.app_user_id,
+      'username', $1.username, 
+      'corpus', jsi.corpus_summary($1.person_id),
+      'read_only', app_user_is_read_only($1), 
+      'admin', $1.admin
+     ) ;
+  $function$
+
+  CREATE OR REPLACE FUNCTION public.user_to_json(integer, json DEFAULT NULL::json)
+   RETURNS json
+   LANGUAGE sql
+  AS $function$
+   SELECT user_to_json(u, $2) FROM app_user u WHERE app_user_id = $1;
+  $function$
+
+  CREATE OR REPLACE FUNCTION public.user_to_json(app_user, json DEFAULT NULL::json)
+   RETURNS json
+   LANGUAGE sql
+  AS $function$
+      SELECT json_build_object(
+	 'user_id', $1.app_user_id,
+	 'username', $1.username,
+	 'role', user_role($1),
+	 'person', person_to_json($1.person_id),
+	 'can_edit', $1.can_edit,
+	 'admin', $1.admin,
+	 'data', $1.data,
+	 'active', $1.login
+      );
+    $function$
+
+  #+end_src
+
+* /Function/ user_role
+:PROPERTIES:
+:CUSTOM_ID: function-user_role
+:END:
+
+#+begin_src sql
+CREATE OR REPLACE FUNCTION user_role(uid INT)
+ RETURNS name LANGUAGE SQL AS $$
+  SELECT COALESCE(rn.rolname, mu.rolname)
+  FROM app_user LEFT JOIN pg_roles AS rn ON (rn.rolname::text = username)
+                LEFT JOIN pg_roles AS mu
+                ON (mu.rolname::text = 'mu_' || $1::text)
+  WHERE app_user_id = $1;
+$$;
+
+CREATE OR REPLACE FUNCTION user_role (app_user) RETURNS name LANGUAGE SQL AS $$
+  SELECT rolname
+  FROM pg_roles
+  WHERE (rolname::text = $1.username)
+  OR (rolname::text = 'mu_' || $1.app_user_id::text)
+$$;
+
+--SELECT * FROM (SELECT username, user_role(app_user) AS role FROM app_user) a WHERE role IS NOT NULL;
+
+#+end_src
+
+We often need to know the user id.
+
+#+begin_src sql
+CREATE OR REPLACE FUNCTION user_id(app_user) RETURNS INT LANGUAGE SQL AS $$
+ SELECT $1.app_user_id;
+$$;
+#+end_src
+
+Often from the Postgresql role.
+
+#+begin_src sql
+CREATE OR REPLACE FUNCTION user_id(name) RETURNS INT LANGUAGE SQL AS $$
+ SELECT COALESCE( (SELECT ((regexp_matches($1::text, '_(\d+)'))[1]::int)),
+                  (SELECT user_id(u) FROM app_user u WHERE username = $1::text
+                          LIMIT 1));
+$$;
+#+end_src
+
+#+begin_src sql
+        SELECT user_id(CURRENT_USER) IS NULL;
+SET ROLE mu_56; SELECT user_id(CURRENT_USER)
+#+end_src
+
+* /Function/ =user_to_json=
+:PROPERTIES:
+:CUSTOM_ID: function-user_to_json
+:END:
+
+#+begin_src sql
+DROP FUNCTION IF EXISTS user_to_json(app_user);
+CREATE OR REPLACE FUNCTION user_to_json(app_user, json DEFAULT NULL::JSON)
+ RETURNS json LANGUAGE SQL AS $$
+  SELECT json_build_object(
+     'user_id', $1.app_user_id,
+     'username', $1.username,
+     'role', user_role($1),
+     'person', person_to_json($1.person_id),
+     'can_edit', $1.can_edit,
+     'admin', $1.admin
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION user_to_json(int, json DEFAULT NULL::JSON)
+ RETURNS json LANGUAGE SQL AS $$
+ SELECT user_to_json(u, $2) FROM app_user u WHERE app_user_id = $1;
+$$;
+#+end_src
+
+#+RESULTS:
+| DROP FUNCTION   |
+|-----------------|
+| CREATE FUNCTION |
+| CREATE FUNCTION |
+
+* App User Contract/Agency/Syndicate
+:PROPERTIES:
+:CUSTOM_ID: app-user-contractagencysyndicate
+:END:
+
+
+  #+BEGIN_SRC sql :results code :exports none
+  select pg_get_functiondef(oid) AS " "
+  from pg_proc
+  where proname = 'update_contract_permissions';
+  #+END_SRC
+
+  #+RESULTS:
+  #+begin_src sql
+
+  CREATE OR REPLACE FUNCTION "user".update_contract_permissions()
+   RETURNS trigger
+   LANGUAGE plpgsql
+  AS $function$
+    BEGIN
+      PERFORM "user".update_contract_permissions(NEW.app_user_id);
+      RETURN NEW;
+      END;
+    $function$
+
+  CREATE OR REPLACE FUNCTION "user".update_contract_permissions(_user_id integer)
+   RETURNS integer
+   LANGUAGE plpgsql
+  AS $function$
+    BEGIN
+      DELETE FROM "user".contract_permission WHERE user_id = $1;
+      INSERT INTO "user".contract_permission
+      SELECT ("user".external_contract_permissions($1)).* ;
+      RETURN $1;
+    END;
+    $function$
+
+  #+end_src
+
+  #+BEGIN_SRC sql :results code :exports none
+  select pg_get_functiondef(oid) AS " "
+  from pg_proc
+  where proname = 'external_contract_permissions';
+  #+END_SRC
+
+  #+RESULTS:
+  #+begin_src sql
+
+    CREATE OR REPLACE FUNCTION "user".external_contract_permissions(_user_id integer, _contract_id integer DEFAULT '-1'::integer)
+     RETURNS SETOF "user".contract_permission
+     LANGUAGE sql
+    AS $function$
+         WITH user_all_contracts AS (
+         SELECT app_user_id, NULL::integer as contract_id,
+                admin AS "create",
+                COALESCE((SELECT FALSE
+                            FROM app_user_contract AS con
+                                   FULL OUTER JOIN app_user_agency AS a USING (app_user_id)
+                                   FULL OUTER JOIN app_user_claim AS c USING (app_user_id)
+                           WHERE TRUE AND ((c.* IS NULL) OR c.access)
+                             AND app_user_id = app_user.app_user_id
+                           LIMIT 1), TRUE) AS read,
+                can_edit AS update,
+                admin AS delete
+           FROM app_user
+       ), user_contracts AS (
+         SELECT app_user_id, auc.contract_id, "create", true AS "read", "update", "delete"
+           FROM app_user_contract AS auc
+                  JOIN user_all_contracts USING (app_user_id)
+       ), user_agency AS (
+         SELECT app_user_id, contract.contract_id, "create", true AS "read", "update", "delete"
+           FROM app_user_agency AS auc
+                  JOIN user_all_contracts USING (app_user_id)
+                  RIGHT JOIN contract USING (agency_id)
+      ), user_syndicate AS (
+       SELECT app_user_id, contract.contract_id, "create", true AS "read", "update", "delete"
+         FROM app_user_syndicate AS aus
+                JOIN user_all_contracts USING (app_user_id)
+                RIGHT JOIN contract USING (syndicate_id)
+
+       ), user_claim AS (
+         SELECT app_user_id, contract.contract_id, "create", true AS "read", "update", "delete"
+           FROM app_user_claim AS auc
+           JOIN claim USING (claim_id)
+           JOIN risk USING (risk_id)
+           JOIN contract USING (contract_id)
+           JOIN user_all_contracts USING (app_user_id)
+       )
+         SELECT *
+           FROM (SELECT * FROM user_all_contracts
+                  UNION SELECT * FROM user_contracts
+                  UNION SELECT * from user_agency
+                  UNION SELECT * from user_syndicate
+                  UNION SELECT * FROM user_claim
+                  ORDER BY app_user_id, contract_id) AS perms
+        WHERE app_user_id = _user_id
+        AND ((_contract_id = -1)
+             OR (contract_id IS NULL AND _contract_id IS NULL)
+             OR (contract_id = _contract_id))
+       $function$
+
+  #+end_src
+
+  #+RESULTS:
+  | CREATE FUNCTION |
+  |-----------------|
+
+#+begin_src sql
+      CREATE TABLE public.app_user_syndicate (
+      app_user_syndicate_id SERIAL PRIMARY KEY,
+
+      app_user_id integer REFERENCES app_user(app_user_id),
+
+      syndicate_id integer REFERENCES person(person_id)
+  );
+    GRANT SELECT on app_user_syndicate TO mr_read;
+#+end_src
+
+
+
+#+begin_src sql
+       CREATE TRIGGER z_update_contract_permissions
+        AFTER INSERT OR UPDATE OR DELETE ON app_user_syndicate
+        FOR EACH ROW EXECUTE PROCEDURE "user".update_contract_permissions()
+#+end_src
+#+RESULTS:
+| CREATE TRIGGER |
+|----------------|

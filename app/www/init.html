@@ -1,0 +1,42 @@
+<div id="ecmBody">
+  <hr id="ecmReplaceBody">
+  <script src="admin-pi.js"></script>
+  <script src="entity/contract.js"></script>
+  <script src="entity/address.js"></script>
+  <script>
+    globalThis.exports = globalThis.exports || {}
+    ECM._init = function (user) {
+	const redir = ((go = false) => {
+            if (go) {
+		window.location.replace(`/ecm/login/?q=${encodeURIComponent(window.location.pathname)}`)
+	    }
+	    return false
+	})
+	console.log('init', user)
+	if (user) {
+	    user.promise.then(u => {
+		if (u) {
+		    const body = document.querySelector("#ecmBody")
+		    ECM.replaceElement(body.firstElementChild, "main.html")
+		} else {
+		    redir(true)
+		}
+	    }).catch(e => redir())
+	} else { redir(true) ; }  
+    }
+  </script>
+  <script src="parse-full-name/index.js"></script>
+  <script src="entity/person.js"></script>
+  <script src="entity/policy.js"></script>
+  <script src="entity/claim.js"></script>
+  <script src="entity/user.js"
+	  onload="ECM._init(User.init())"></script>
+
+  <script src="entity/diary.js"></script>
+  <script async>
+    if (window.location.pathname === "/diary/") {
+	document.title = "Diary"
+    }
+    // console.log('HErenow', ECM)
+  </script>
+</div>

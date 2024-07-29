@@ -1,0 +1,391 @@
+#+TITLE: DataTables
+
+
+* [[https://datatables.net/reference/api/search.fixed()][search.fixed()]] :website:
+
+Since: DataTables 2.0
+
+Get / set a named search to apply to a table.
+
+<<Description>>
+
+** Description
+
+This method provides the ability to apply a "fixed" search to a DataTable. They might also be termed /sticky/ or /named/ searches. The primary difference from a standard search term is that a fixed search is not immediately replaced by the next search term applied. It is consistently applied to the table, until either replaced by name or is deleted.
+
+Fixed search terms are particularly useful when you want to layer searches - i.e. add multiple search terms and have the table display the cumulative result.
+
+This interface is usually expected to be used by developers creating a custom search interface for DataTables.
+
+Please be aware that this method sets the fixed search to apply to the table only - it does not actually perform the search. In order to have the search performed and the result shown, use the [[//datatables.net/reference/api/draw()][=draw()=]] method, which can be called simply as a chained method of this method.
+
+When using server-side processing, additional logic must be added at the server-side to handle fixed search terms. Additionally, searching by functions is not possible, since the search function is client-side based.
+
+<<Types>>
+
+** Types
+
+<<function>>
+
+*** function search.fixed()
+
+- Description: :: Get a list of the names of searches applied to the table.
+
+- Returns: :: [[//datatables.net/reference/type/DataTables.Api][=DataTables.Api=]]
+
+  An API instance that contains the names of the search terms applied to the table.
+
+<<function>>
+
+*** function search.fixed( name )
+
+- Description: :: Get the search term used for the given name.
+
+- Parameters: ::
+  |   | Name                      | Type                                                 | Optional |
+  |---+---------------------------+------------------------------------------------------+----------|
+  | 1 | =name=                    | [[//datatables.net/reference/type/string][=string=]] | No       |
+  |   | Fixed search term to get. |                                                      |          |
+
+- Returns: :: [[//datatables.net/reference/type/undefined][=undefined=]], [[//datatables.net/reference/type/function][=function=]], [[//datatables.net/reference/type/string][=string=]], [[//datatables.net/reference/type/RegExp][=RegExp=]]
+
+  The search term that was originally applied.
+
+<<function>>
+
+*** function search.fixed( name, searchTerm )
+
+- Description: :: Set a search term to apply to the table, using a name to uniquely identify it.
+
+- Parameters: ::
+  |   | Name                                                                                                                                                                | Type                                                                                                                                                                                                                   | Optional |
+  |---+---------------------------------------------------------------------------------------------------------------------------------------------------------------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+----------|
+  | 1 | =name=                                                                                                                                                              | [[//datatables.net/reference/type/string][=string=]]                                                                                                                                                                   | No       |
+  |   | Name to give to the search term so it can be addressed in future.                                                                                                   |                                                                                                                                                                                                                        |          |
+  | 2 | =input=                                                                                                                                                             | [[//datatables.net/reference/type/string][=string=]], [[//datatables.net/reference/type/RegExp][=RegExp=]], [[//datatables.net/reference/type/function][=function=]], [[//datatables.net/reference/type/null][=null=]] | No       |
+  |   | The search term to apply to the table.                                                                                                                              |                                                                                                                                                                                                                        |          |
+  |   |                                                                                                                                                                     |                                                                                                                                                                                                                        |          |
+  |   | Use =null= for this value to delete an existing search term.                                                                                                        |                                                                                                                                                                                                                        |          |
+  |   |                                                                                                                                                                     |                                                                                                                                                                                                                        |          |
+  |   | If given as a string, it will be applied to the table's search using DataTables "smart" search (see [[//datatables.net/reference/api/search()][=search()=]]).       |                                                                                                                                                                                                                        |          |
+  |   |                                                                                                                                                                     |                                                                                                                                                                                                                        |          |
+  |   | If working with a regular expression, be aware that the regex is applied to a single string with the search data from all searchable columns (double space joined). |                                                                                                                                                                                                                        |          |
+  |   |                                                                                                                                                                     |                                                                                                                                                                                                                        |          |
+  |   | In the case of a function the function is called for each row with three parameters which are passed in:                                                            |                                                                                                                                                                                                                        |          |
+  |   |                                                                                                                                                                     |                                                                                                                                                                                                                        |          |
+  |   | 1. The search string of data from all searchable columns in the table                                                                                               |                                                                                                                                                                                                                        |          |
+  |   | 2. The row's original data object                                                                                                                                   |                                                                                                                                                                                                                        |          |
+  |   | 3. The row's data index                                                                                                                                             |                                                                                                                                                                                                                        |          |
+  |   |                                                                                                                                                                     |                                                                                                                                                                                                                        |          |
+  |   | A boolean value should be returned: =true= to keep the row, =false= to filter it out.                                                                               |                                                                                                                                                                                                                        |          |
+
+- Returns: :: [[//datatables.net/reference/type/DataTables.Api][=DataTables.Api=]]
+
+  DataTables API instance
+
+<<Examples>>
+
+** Examples
+
+Get an array of current search names:
+
+#+begin_example
+ let table = new DataTable('#myTable');
+
+let searches = table.search.fixed().toArray();
+#+end_example
+
+Get an expecting search term:
+
+#+begin_example
+ let search = table.search.fixed('mySearch');
+#+end_example
+
+Applying a search string:
+
+#+begin_example
+ table.search.fixed('myString', 'Paris');
+#+end_example
+
+Applying a search regex:
+
+#+begin_example
+ table.search.fixed('myRegex', /l.*n/i);
+#+end_example
+
+Applying a search function:
+
+#+begin_example
+ table.search.fixed('myFunc', (row, data) => {
+    return row.includes('New York');
+});
+#+end_example
+
+Deleting an existing search term:
+
+#+begin_example
+ table.search.fixed('mySearch', null);
+#+end_example
+
+<<Related>>
+
+** Related
+
+The following options are directly related and may also be useful in your application development.
+
+API
+
+- [[//datatables.net/reference/api/column().search()][=column().search()=]]
+- [[//datatables.net/reference/api/column().search.fixed()][=column().search.fixed()=]]
+- [[//datatables.net/reference/api/columns().search()][=columns().search()=]]
+- [[//datatables.net/reference/api/columns().search.fixed()][=columns().search.fixed()=]]
+
+Options
+
+- [[//datatables.net/reference/option/searching][=searching=]]
+- [[//datatables.net/reference/option/columns.searchable][=columns.searchable=]]
+
+
+* [[https://datatables.net/manual/server-side][Server-side processing]] :website:
+
+There are times when reading data from the DOM is simply too slow or
+unwieldy, particularly when dealing with many thousands or millions of
+data rows. To address this DataTables' server-side processing feature
+provides a method to let all the "heavy lifting" be done by a database
+engine on the server-side (they are after all highly optimised for
+exactly this use case!), and then have that information drawn in the
+user's web-browser. Consequently, you can display tables consisting of
+millions of rows with ease.
+
+When using server-side processing, DataTables will make an Ajax
+request to the server for each draw of the information on the page
+(i.e. when paging, ordering, searching, etc.). DataTables will send a
+number of variables to the server to allow it to perform the required
+processing and then return the data in the format required by
+DataTables.
+
+Server-side processing is enabled by use of the [[//datatables.net/reference/option/serverSide][=serverSide=]] option, and configured using [[//datatables.net/reference/option/ajax][=ajax=]]. See below for further information on configuration options.
+
+** [[#Sent-parameters][]]Sent parameters
+
+When making a request to the server using server-side processing,
+DataTables will send the following data in order to let the server
+know what data is required:
+
+| Parameter name              | Type                                                   | Description                                                                                                                                                                                                                                                                                                                                            |
+|-----------------------------+--------------------------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+  - =draw=                     [[//datatables.net/reference/type/integer][=integer=]]  :: Draw counter. This is
+    used by DataTables to ensure that the Ajax returns from
+    server-side processing requests are drawn in sequence by
+    DataTables (Ajax requests are asynchronous and thus can return out
+    of sequence). This is used as part of the =draw= return parameter
+    (see below).  |
+    
+  - =start=                    [[//datatables.net/reference/type/integer][=integer=]]  :: Paging first record
+    indicator. This is the start point in the current data set (0
+    index based - i.e. 0 is the first record).  |
+    
+  - =length=                   [[//datatables.net/reference/type/integer][=integer=]]  :: Number of records that
+    the table can display in the current draw. It is expected that the
+    number of records returned will be equal to this number, unless
+    the server has fewer records to return. Note that this can be -1
+    to indicate that all records should be returned (although that
+    negates any benefits of server-side processing!)  |
+    
+  - =search[value]=            [[//datatables.net/reference/type/string][=string=]]    :: Global search value. To
+    be applied to all columns which have =searchable= as =true=.  |
+    
+  - =search[regex]=            [[//datatables.net/reference/type/boolean][=boolean=]]  :: =true= if the global
+    filter should be treated as a regular expression for advanced
+    searching, =false= otherwise. Note that normally server-side
+    processing scripts will not perform regular expression searching
+    for performance reasons on large data sets, but it is technically
+    possible and at the discretion of your script.  |
+    
+  - =order[i][column]=         [[//datatables.net/reference/type/integer][=integer=]]  :: Column to which ordering
+    should be applied. This is an index reference to the =columns=
+    array of information that is also submitted to the server.  |
+    
+  - =order[i][dir]=            [[//datatables.net/reference/type/string][=string=]]   :: Ordering direction for
+    this column. It will be =asc= or =desc= to indicate ascending
+    ordering or descending ordering, respectively.  |
+    
+  - =columns[i][data]=         [[//datatables.net/reference/type/string][=string=]]   :: Column's data source, as
+    defined by [[//datatables.net/reference/option/columns.data][=columns.data=]].  |
+    
+  - =columns[i][name]=         [[//datatables.net/reference/type/string][=string=]]   :: Column's name, as defined
+    by [[//datatables.net/reference/option/columns.name][=columns.name=]].  |
+    
+  - =columns[i][searchable]=   [[//datatables.net/reference/type/boolean][=boolean=]]  :: Flag to indicate if this
+    column is searchable ( =true=) or not ( =false=). This is
+    controlled by [[//datatables.net/reference/option/columns.searchable][=columns.searchable=]].  |
+    
+  - =columns[i][orderable]=    [[//datatables.net/reference/type/boolean][=boolean=]]  :: Flag to indicate if this
+    column is orderable ( =true=) or not ( =false=). This is
+    controlled by [[//datatables.net/reference/option/columns.orderable][=columns.orderable=]].  |
+    
+  - =columns[i][search][value] [[//datatables.net/reference/type/string][=string=]]   :: Search value to apply to
+    this specific column.  |
+    
+  - =columns[i][search][regex] [[//datatables.net/reference/type/boolean][=boolean=]]  :: Flag
+    to indicate if the search term for this column should be treated
+    as regular expression ( =true=) or not ( =false=). As with global
+    search, normally server-side processing scripts will not perform
+    regular expression searching for performance reasons on large data
+    sets, but it is technically possible and at the discretion of your
+    script. 
+    
+
+The =order[i]= and =columns[i]= parameters that are sent to the server are arrays of information:
+
+- =order[i]= - is an array defining how many columns are being ordered upon - i.e. if the array length is 1, then a single column sort is being performed, otherwise a multi-column sort is being performed.
+- =columns[i]= - an array defining all columns in the table.
+
+In both cases, =i= is an integer which will change to indicate the array value. In most modern server-side scripting environments this data will automatically be available to you as an array.
+
+** [[#Returned-data][]]Returned data
+
+Once DataTables has made a request for data, with the above parameters
+sent to the server, it expects JSON data to be returned to it, with
+the following parameters set:
+
+ - =draw=  [[//datatables.net/reference/type/integer][=integer=]] :: The draw counter that this object is a
+   response to - from the =draw= parameter sent as part of the data
+   request. Note that it is *strongly recommended for security
+   reasons* that you /cast/ this parameter to an integer, rather than
+   simply echoing back to the client what it sent in the =draw=
+   parameter, in order to prevent Cross Site Scripting (XSS)
+   attacks. 
+ - =recordsTotal=  [[//datatables.net/reference/type/integer][=integer=]] :: Total records, before filtering
+   (i.e. the total number of records in the database) |
+ - =recordsFiltered= [[//datatables.net/reference/type/integer][=integer=]] :: Total records, after filtering
+ (i.e. the total number of records after filtering has been applied -
+ not just the number of records being returned for this page of
+ data).  
+
+-  =data=   [[//datatables.net/reference/type/array][=array=]]  :: The data to be displayed in the table. This is
+  an array of data source objects, one for each row, which will be
+  used by DataTables. Note that this parameter's name can be changed
+  using the [[//datatables.net/reference/option/ajax][=ajax=]] option's =dataSrc= property.  
+
+ - =error=  [[//datatables.net/reference/type/string][=string=]]   :: /Optional/: If an error occurs during the
+   running of the server-side processing script, you can inform the
+   user of this error by passing back the error message to be
+   displayed using this parameter. Do not include if there is no
+   error.  
+
+In addition to the above parameters which control the overall table, DataTables can use the following optional parameters on each individual row's data source object to perform automatic actions for you:
+
+| Parameter name | Type                                                 | Description                                                                                                                                                                                                                                                                                                                             |
+|----------------+------------------------------------------------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| =DT_RowId=     | [[//datatables.net/reference/type/string][=string=]] | Set the ID property of the =tr= node to this value                                                                                                                                                                                                                                                                                      |
+| =DT_RowClass=  | [[//datatables.net/reference/type/string][=string=]] | Add this class to the =tr= node                                                                                                                                                                                                                                                                                                         |
+| =DT_RowData=   | [[//datatables.net/reference/type/object][=object=]] | Add the data contained in the object to the row using the [[//api.jquery.com/data/][jQuery =data()=]] method to set the data, which can also then be used for later retrieval (for example on a click event).                                                                                                                           |
+| =DT_RowAttr=   | [[//datatables.net/reference/type/object][=object=]] | Add the data contained in the object to the row =tr= node as attributes. The object keys are used as the attribute keys and the values as the corresponding attribute values. This is performed using using the [[//api.jquery.com/param/][jQuery =param()=]] method. Please note that this option requires DataTables 1.10.5 or newer. |
+
+An example of how a return looks using these options is shown below in the "Example data" section below.
+
+** [[#Configuration][]]Configuration
+
+Server-side processing in DataTables is enabled through use of the [[//datatables.net/reference/option/serverSide][=serverSide=]] option. Simply set it to =true= and DataTables will operate in server-side processing mode. You will also want to use the [[//datatables.net/reference/option/ajax][=ajax=]] option to specify the URL where DataTables should get its Ajax data from. As such, the simplest server-side processing initialisation is:
+
+#+begin_example
+ $('#example').DataTable( {
+    serverSide: true,
+    ajax: '/data-source'
+} );
+#+end_example
+
+Configuration of how DataTables makes the Ajax request is configured through the [[//datatables.net/reference/option/ajax][=ajax=]] option. In the above example we used it as a string, which instructs DataTables to use its default settings for making the Ajax request. However, you can customise these settings by passing [[//datatables.net/reference/option/ajax][=ajax=]] in as an object. As an object, [[//datatables.net/reference/option/ajax][=ajax=]] maps directly onto the [[//api.jquery.com/jQuery.ajax/][jQuery =ajax=]] configuration object, so any options you can use in a jQuery request, you can also use with DataTables! For example, to make a POST request:
+
+#+begin_example
+ $('#example').DataTable( {
+    serverSide: true,
+    ajax: {
+        url: '/data-source',
+        type: 'POST'
+    }
+} );
+#+end_example
+
+For further information about the Ajax options available in DataTables, please refer to the [[//datatables.net/reference/option/ajax][=ajax=]] documentation.
+
+** [[#Legacy][]]Legacy
+
+Older versions of DataTables (1.9-) used a different set of parameters to send and receive from the server. As such scripts which are written for DataTables 1.10+ will not be able to function with DataTables 1.9-. However, DataTables 1.10 does have a compatibility mode for scripts written for 1.9-. This compatibility mode is triggered by use of the old =sAjaxSource= parameter (rather than the new [[//datatables.net/reference/option/ajax][=ajax=]] parameter) or by setting =$.fn.dataTable.ext.legacy.ajax = true;= .
+
+For documentation on the 1.9- method of performing server-side processing, please refer to the [[//legacy.datatables.net/usage/server-side][legacy documentation]].
+
+** [[#Example-data][]]Example data
+
+Example of server-side processing return using arrays as the data source for the table ( [[/examples/server_side/simple.html][full example]]):
+
+#+begin_example
+ {
+    "draw": 1,
+    "recordsTotal": 57,
+    "recordsFiltered": 57,
+    "data": [
+        [
+            "Angelica",
+            "Ramos",
+            "System Architect",
+            "London",
+            "9th Oct 09",
+            "$2,875"
+        ],
+        [
+            "Ashton",
+            "Cox",
+            "Technical Author",
+            "San Francisco",
+            "12th Jan 09",
+            "$4,800"
+        ],
+        ...
+    ]
+}
+#+end_example
+
+Example of server-side processing return using objects, with
+=DT_RowId= and =DT_RowData= also included, as the data source for the
+table ( [[/examples/server_side/object_data.html][full example]]):
+
+#+begin_example
+ {
+    "draw": 1,
+    "recordsTotal": 57,
+    "recordsFiltered": 57,
+    "data": [
+        {
+            "DT_RowId": "row_3",
+            "DT_RowData": {
+                "pkey": 3
+            },
+            "first_name": "Angelica",
+            "last_name": "Ramos",
+            "position": "System Architect",
+            "office": "London",
+            "start_date": "9th Oct 09",
+            "salary": "$2,875"
+        },
+        {
+            "DT_RowId": "row_17",
+            "DT_RowData": {
+                "pkey": 17
+            },
+            "first_name": "Ashton",
+            "last_name": "Cox",
+            "position": "Technical Author",
+            "office": "San Francisco",
+            "start_date": "12th Jan 09",
+            "salary": "$4,800"
+        },
+        ...
+    ]
+}
+#+end_example
+
+A full set of examples, exploring the options available for
+server-side processing is available in the [[/examples/server_side/][examples section of this
+site]].

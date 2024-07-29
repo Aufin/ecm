@@ -1,0 +1,5 @@
+#+TITLE: Entity: A very specfic ECM centric object
+
+Entities are at least one attempt at separation of concerns.
+
+ - [[file:Contract.org][Contracts]] :: The start of something simple.

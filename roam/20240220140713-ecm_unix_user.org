@@ -1,0 +1,14 @@
+:PROPERTIES:
+:ID:       d881ec96-8f43-4c62-a3f3-21f16dd7bcc6
+:END:
+#+title: ecm unix user
+
+There's a user underwhich the majority of the ecm things are nested.
+
+#+begin_src sh
+  sudo addgroup --gid 4242 ecm
+  sudo adduser --uid 4242 --ingroup ecm ecm
+  # Now pretend the user is always logged in
+  loginctl enable-linger ecm
+#+end_src
+

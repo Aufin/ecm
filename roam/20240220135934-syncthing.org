@@ -1,0 +1,182 @@
+:PROPERTIES:
+:ID:       cd942f0f-b05b-4cba-b4ad-0bdeb185b25c
+:END:
+#+title: Syncthing
+
+[[https://syncthing.net/][Syncthing]] is a continuous file synchronization program. It
+synchronizes files between two or more computers in real time, safely
+protected from prying eyes.
+
+We are using it a lot! Most things are owned by the [[id:d881ec96-8f43-4c62-a3f3-21f16dd7bcc6][ecm unix user.]]
+
+We want to ensure it can be read from the LAN, not just the locahost
+
+#+begin_src bash
+  echo '[Service]' > /tmp/ecm_sync.conf
+  echo ExecStart= >> /tmp/ecm_sync.conf
+  echo ExecStart=/usr/bin/syncthing serve --no-browser --gui-address 0.0.0.0:8384 --no-restart --logflags=0  >> /tmp/ecm_sync.conf
+  sh -c 'SYSTEMD_EDITOR="cp /tmp/ecm_sync.conf" systemctl edit syncthing@ecm.service'
+#+end_src
+
+
+Or the alternative
+#+begin_src
+  sudo systemctl edit --full syncthing@ecm.service
+#+end_src
+
+That gives us this.
+
+#+begin_src conf
+[Unit]
+Description=Syncthing - Open Source Continuous File Synchronization for %I
+Documentation=man:syncthing(1)
+After=network.target
+StartLimitIntervalSec=60
+StartLimitBurst=4
+
+[Service]
+User=%i
+ExecStart=/usr/bin/syncthing serve --no-browser --gui-address 0.0.0.0:8384 --no-restart --logflags=0
+Restart=on-failure
+RestartSec=1
+SuccessExitStatus=3 4
+RestartForceExitStatus=3 4
+
+# Hardening
+ProtectSystem=full
+PrivateTmp=true
+SystemCallArchitectures=native
+MemoryDenyWriteExecute=true
+NoNewPrivileges=true
+
+# Elevated permissions to sync ownership (disabled by default),
+# see https://docs.syncthing.net/advanced/folder-sync-ownership
+#AmbientCapabilities=CAP_CHOWN CAP_FOWNER
+
+[Install]
+WantedBy=multi-user.target
+
+#+end_src
+
+* [[https://idroot.us/install-syncthing-ubuntu-22-04/][How To Install Syncthing on Ubuntu 22.04 LTS - idroot]] :website:
+
+In this tutorial, we will show you how to install Syncthing on Ubuntu 22.04 LTS. For those of you who didn't know, Syncthing is an open-source continuous file synchronization used to sync files between two or more computers in a network. Syncthing does not upload your data to the cloud but exchanges your data across your machines as soon as they are online at the same time. It supports cross-platform and is available on Windows, macOS, Linux, Android, and much more it is possible to sync multiple devices.
+
+This article assumes you have at least basic knowledge of Linux, know how to use the shell, and most importantly, you host your site on your own VPS. The installation is quite simple and assumes you are running in the root account, if not you may need to add ‘ =sudo=‘ to the commands to get root privileges. I will show you the step-by-step installation of the Syncthing on Ubuntu 22.04 (Jammy Jellyfish). You can follow the same instructions for Ubuntu 22.04 and any other Debian-based distribution like Linux Mint, Elementary OS, Pop!_OS, and more as well.
+
+__
+
+*Prerequisites*
+
+- A server running one of the following operating systems: Ubuntu 22.04, 20.04, and any other Debian-based distribution like Linux Mint.
+- It's recommended that you use a fresh OS install to prevent any potential issues.
+- SSH access to the server (or just open Terminal if you're on a desktop).
+- A =non-root sudo user= or access to the =  root user=. We recommend acting as a =  non-root sudo user=, however, as you can harm your system if you're not careful when acting as the root.
+
+** Install Syncthing on Ubuntu 22.04 LTS Jammy Jellyfish
+
+*** Step 1. First, make sure that all your system packages are up-to-date by running the following =apt= commands in the terminal.
+
+#+begin_src sh
+  sudo apt update
+  sudo apt upgrade
+  sudo apt install software-properties-common apt-transport-https wget ca-certificates gnupg2 ubuntu-keyring
+#+end_src
+
+*** Step 2. Installing Syncthing on Ubuntu 22.04.
+
+By default, the Syncthing is not available on Ubuntu 22.04 base repository. Now run the following command below to add the Syncthing repository to your Ubuntu system:
+
+#+begin_src sh
+  echo "deb [signed-by=/usr/share/keyrings/syncthing-archive-keyring.gpg] https://apt.syncthing.net/ syncthing stable" | sudo tee /etc/apt/sources.list.d/syncthing.list
+#+end_src
+
+Next, import the GPG key:
+
+#+begin_src sh
+  sudo curl -s -o /usr/share/keyrings/syncthing-archive-keyring.gpg https://syncthing.net/release-key.gpg
+#+end_src
+
+After the repository is enabled, now install the latest version of Syncthing using the below command:
+
+#+begin_src sh
+  sudo apt update
+  sudo apt install syncthing
+#+end_src
+
+Confirm the installation and check the installed build version of Syncthing:
+
+#+begin_src sh
+  syncthing --version
+#+end_src
+
+** Step 3. Enable the Syncthing service.
+
+Syncthing is now installed but we need to enable it manually using the
+=systemctl= command to automatically start it at bootup. The official
+Syncthing package ships with the needed =systemd= service file under
+=/lib/systemd/system/syncthing@.service=:
+
+#+begin_src sh
+  sudo systemctl enable syncthing@ecm.service
+  sudo systemctl start syncthing@ecm.service
+  # Created symlink /etc/systemd/system/multi-user.target.wants/syncthing@ecm.service → /lib/systemd/system/syncthing@.service.
+  systemctl status syncthing@ecm.service
+#+end_src
+
+** Step 4. Configure Firewall.
+
+Ubuntu 22.04 has =ufw= a firewall running by default.
+
+We don't want that for our local servers as they are not in the DMZ
+
+#+begin_src sh
+  sudo ufw disable sudo ufw status
+#+end_src
+
+
+Now we enable
+connection through ports =22000=:
+
+#+begin_src sh
+  sudo ufw allow 22000/tcp
+  sudo ufw enable
+  sudo ufw status
+#+end_src
+
+** Step 5. Accessing Syncthing Web Interface.
+
+Once completely successful installed, now open your web browser and
+access the Syncthing web UI using the URL
+=http://your-ip-address:8384=. You will be taken to the Syncthing
+dashboard as shown below:
+
+[[https://idroot.us/wp-content/uploads/2021/06/syncthing-web-interface.jpg]]
+
+Step 6. Installing Syncthing on other OS.
+
+Go to the [[https://syncthing.net/downloads/][Syncthing download page]] and install Syncthing on other operating systems like Windows, macOS, BSD, and Android. Currently, there is no official client for iOS. You can use the third-party app [[https://www.mobiussync.com/][MobiusSync]].
+
+Congratulations! You have successfully [[https://idroot.us/install-syncthing-ubuntu-20-04/][installed Syncthing]]. Thanks for using this tutorial for installing the Syncthing on Ubuntu 22.04 LTS Jammy Jellyfish system. For additional help or useful information, we recommend you check [[https://syncthing.net/][the official Syncthing website]].
+
+VPS Manage Service Offer
+
+*If you don't have time to do all of this stuff, or if this is not your area of expertise, we offer a service to do “VPS Manage Service Offer”, starting from $10 (Paypal payment). Please [[https://idroot.us/contact-us/][contact us]] to get the best deal!*
+
+__
+
+Tags
+
+[[https://idroot.us/tag/syncthing/][Syncthing]]
+
+[[https://idroot.us/author/r00t/][r00t]]
+
+[[https://www.facebook.com/sharer.php?u=https://idroot.us/install-syncthing-ubuntu-22-04/][ Facebook]] [[https://twitter.com/intent/tweet?text=How%20To%20Install%20Syncthing%20on%20Ubuntu%2022.04%20LTS&url=https://idroot.us/install-syncthing-ubuntu-22-04/][ Twitter]] [[https://pinterest.com/pin/create/button/?url=https://idroot.us/install-syncthing-ubuntu-22-04/&description=How%20To%20Install%20Syncthing%20on%20Ubuntu%2022.04%20LTS&media=https://idroot.us/wp-content/uploads/2022/04/ubuntu-logo-22-04-lts.jpg][ Pinterest]] [[https://reddit.com/submit?url=https://idroot.us/install-syncthing-ubuntu-22-04/&title=How%20To%20Install%20Syncthing%20on%20Ubuntu%2022.04%20LTS][ Reddit]] [[https://api.whatsapp.com/send?text=How%20To%20Install%20Syncthing%20on%20Ubuntu%2022.04%20LTS%20https://idroot.us/install-syncthing-ubuntu-22-04/][ WhatsApp]] [[mailto:?subject=How%20To%20Install%20Syncthing%20on%20Ubuntu%2022.04%20LTS&body=https://idroot.us/install-syncthing-ubuntu-22-04/][ Share via Email]] [[#][ Print]]
+
+[[https://idroot.us/author/r00t/][[[https://idroot.us/wp-content/uploads/2024/01/idroot-profile.jpg]]]]
+
+*** [[https://idroot.us/author/r00t/][r00t]]
+
+r00t is a seasoned Linux system administrator with a wealth of experience in the field. Known for his contributions to idroot.us, r00t has authored numerous tutorials and guides, helping users navigate the complexities of Linux systems. His expertise spans across various Linux distributions, including Ubuntu, CentOS, and Debian. r00t's work is characterized by his ability to simplify complex concepts, making Linux more accessible to users of all skill levels. His dedication to the Linux community and his commitment to sharing knowledge makes him a respected figure in the field.
+
+- [[https://idroot.us][ Website]]

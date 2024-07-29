@@ -1,0 +1,2196 @@
+#+TITLE: JSON : The sexp of now()
+#+PROPERTY: header-args:sql :engine postgres :cmdline "\"host=db.ecm.lan port=5432 user=maxclaims dbname=maxclaims\""
+
+* Row to json array
+
+In the webapp we use [[https://datatables.net/manual/ajax#Loading-data][DataTables]] to make most tables much more
+interactive.
+
+Trying to make it as simple as possible means little to no
+configuration and trivially hacked to be different.
+
+#+begin_quote
+The corresponding initialisation of DataTables for the three data
+structures is shown on the right.
+
+1) Array of data - note that the array option does not require the
+   columns.data option to be set. This is because the default value
+   for columns.data is the column index (i.e. 0, 1, 2...):
+
+[
+    "Tiger Nixon",
+    "System Architect",
+    "$320,800",
+    "2011/04/25",
+    "Edinburgh",
+    "5421"
+]
+
+$('#myTable').DataTable( {
+    ajax: ...
+} );
+ 
+// or!
+ 
+$('#myTable').DataTable( {
+    ajax: ...,
+    columns: [
+        { data: 0 },
+        { data: 1 },
+        { data: 2 },
+        { data: 3 },
+        { data: 4 }
+    ]
+} );
+#+end_quote
+
+So we want to turn a row into a json array.
+
+#+begin_src sql
+  CREATE OR REPLACE FUNCTION row_to_json_array(record)
+  RETURNS JSON LANGUAGE PLPGSQL IMMUTABLE AS $$
+  DECLARE
+   res json;
+  BEGIN
+    SELECT json_agg(value) INTO res FROM (SELECT (json_each(row_to_json($1))).value) jk;
+    return res;
+  END;
+  $$;	 
+#+end_src
+
+#+begin_src sql
+drop function if exists json_sub_array(json, int, int);
+create or replace function json_sub_array(_json_array json, from_pos int, to_pos int)
+returns json language sql as $$
+    select json_agg(value)
+    from json_array_elements(_json_array) with ordinality
+    where ordinality-1 between from_pos and to_pos
+$$;
+
+drop function if exists json_sub_array(json, int);
+create or replace function json_sub_array(_json_array json, from_pos int)
+returns json language sql as $$
+    select json_sub_array(_json_array, from_pos, json_array_length(_json_array));
+$$;
+
+drop function if exists jsonb_sub_array(jsonb, int, int);
+create or replace function jsonb_sub_array(jsonb_array jsonb, from_pos int, to_pos int)
+returns jsonb language sql as $$
+    select jsonb_agg(value)
+    from jsonb_array_elements(jsonb_array) with ordinality
+    where ordinality-1 between from_pos and to_pos;
+$$;
+
+drop function if exists jsonb_sub_array(jsonb, int);
+create or replace function jsonb_sub_array(jsonb_array jsonb, from_pos int)
+returns jsonb language sql as $$
+    select jsonb_sub_array(jsonb_array, from_pos, jsonb_array_length(jsonb_array));
+$$;
+#+end_src
+
+#+RESULTS:
+| CREATE FUNCTION |
+|-----------------|
+
+
+* The Backend/Frontend functions
+Hopefully, in reality, most/all of these will be overtaken/merged with
+[[file:~/src/ecm/database/Claim.org::#the-claim_crux-table-cache-and-friends][The =claim_crux= table]] and its friends.
+
+For now, <2024-04-26 Fri>, these functions (and friends) are what the
+front end uses.
+
+#+begin_src sql :results verbatim :wrap src sql
+  SELECT pg_get_functiondef(p.oid) AS " ", ';' AS "  "
+  FROM pg_namespace n LEFT JOIN pg_proc p ON (n.oid = p.pronamespace)
+  WHERE n.nspname IN ('jsi', 'jso') LIMIT ALL;
+#+end_src
+
+#+RESULTS:
+#+begin_src sql
+ 	  
+CREATE OR REPLACE FUNCTION jsi.claim_crux(claim_id integer)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+ -- uses claim without schema
+  SELECT jsi.claim_crux(claim) from claim WHERE claim_id = $1;
+ $function$
+	;
+CREATE OR REPLACE FUNCTION jsi.corpus_summary(person)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+   SELECT pongo.json_strip_nulls(json_build_object(
+     '_type', 'corpus_summary', 
+     '_id', $1.person_id, 
+     'full_name', person_name($1),
+     'first_name', CASE WHEN (trim(both from $1.first_name) != '')
+                   THEN $1.first_name END,
+     'last_name', CASE WHEN (trim(both FROM $1.last_name) != '')
+                    THEN $1.last_name END,
+     'company_name', CASE WHEN (trim(both FROM $1.company_name) != '')
+                   THEN $1.company_name END, 
+     'email_address', CASE WHEN (trim(both FROM $1.email_address) != '')
+                   THEN $1.email_address END, 
+     'province', jsi.province($1)
+     ))
+  $function$
+	;
+CREATE OR REPLACE FUNCTION jsi.claim_continual_timecard(claim_id integer)
+ RETURNS json
+ LANGUAGE sql
+AS $function$ 
+ SELECT jsi.timecard_interim(null::timecard_interim, 
+  'timecard-continual', 
+  COALESCE((SELECT MAX(date) FROM timecard_interim WHERE claim_id = $1),
+  (SELECT MIN(date) FROM timecard WHERE claim_id = $1)),
+  (SELECT MAX(date) + INTERVAL '1 second' FROM timecard WHERE claim_id = $1))
+   AS json;
+  
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.claim_balance(claim)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+  SELECT json_build_object(
+    '_type', 'claim_balance', 
+    '_id', $1.claim_id,
+    'deductible', jsi.price($1.deductible),
+    'recovered_deductible', jsi.price(claim_recovered_deductible($1.claim_id)),
+    'outstanding_deductible', jsi.price(claim_deductible($1.claim_id)), 
+    'outstanding_reserve', jsi.price(claim_outstanding_reserve($1.claim_id)),
+    'limit_of_cover', jsi.price((SELECT sum(limit_of_cover)
+                                   FROM claim_transaction WHERE claim_id = $1.claim_id)
+                                ),
+    'total_paid', jsi.price(claim_paid($1.claim_id)), 
+    'incurred', jsi.price(claim_incurred($1.claim_id)), 
+    'headings_balance', jsi.claim_headings_balance($1)
+  )
+  $function$
+	;
+CREATE OR REPLACE FUNCTION jsi.claim_cause(claim_id integer)
+ RETURNS json
+ LANGUAGE sql
+AS $function$ 
+  SELECT jsi.claim_cause(claim) FROM claim WHERE claim_id = $1
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.claim_cause(claim)
+ RETURNS json
+ LANGUAGE sql
+AS $function$ 
+  SELECT json_build_object(
+   'description', claim_cause_type,
+   'code', cause_code)
+  FROM claim_cause WHERE claim_cause_type = $1.cause
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.active_risk_codes()
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+    SELECT json_agg(jsi.risk_code_summary(risk_code.*)) 
+     FROM (SELECT * FROM risk_code 
+           WHERE last_year_of_account = 9999 
+           ORDER BY risk_code.risk_code) AS risk_code
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.app_user_role(app_user)
+ RETURNS text
+ LANGUAGE sql
+ STABLE
+AS $function$
+  SELECT COALESCE(n,nid) FROM
+  (SELECT rolname::text AS nid
+     FROM pg_roles WHERE rolname::text = 'mu_' || $1.app_user_id) AS uid
+  LEFT JOIN (SELECT rolname::text AS n
+     FROM pg_roles WHERE rolname::text = $1.username) AS name
+ ON (TRUE)
+  ;
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.cheque(claim_transaction)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+   WITH json AS (  
+   SELECT pongo.json_strip_nulls(json_build_object(
+    '_type', 'cheque', 
+    '_id', $1.transaction_id,
+    'payee', jsi.corpus_summary($1.payee_id),
+    'recipient', jsi.corpus_summary($1.recipient_id),
+    'cheque_number', CASE WHEN (($1.cheque_number != '') 
+                                AND ($1.cheque_number != 'None'))
+                          THEN $1.cheque_number END,
+    'schemes_advance_number',CASE WHEN ($1.schemes_advance_number != '')
+                                  THEN $1.schemes_advance_number END,
+    'reference_number', CASE WHEN ($1.reference_number != '')
+                             THEN $1.reference_number END
+    )) AS cheque)
+
+    SELECT cheque FROM json 
+     WHERE (cheque->'payee') IS NOT NULL 
+     OR (cheque->'cheque_number') IS NOT NULL
+     OR (cheque->'schemes_advance_number') IS NOT NULL
+     OR (cheque->'reference_number') IS NOT NULL;
+  $function$
+	;
+CREATE OR REPLACE FUNCTION jsi.claim_attachment(integer)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+ SELECT jsi.claim_attachment(attachment) FROM attachment WHERE attachment_id = $1 ;
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.claim_attachment(attachment)
+ RETURNS json
+ LANGUAGE sql
+AS $function$  
+SELECT json_build_object(
+'_type', 'claim-attachment', '_id', $1.attachment_id,
+'claim_id', $1.claim_id,
+'user', jsi.user_summary($1.app_user_id), 
+'date', $1.date::date,
+'time', $1.date,
+'description', $1.file_description,
+'file_name', $1.file_name, 
+'content_type', $1.file_type,
+'sha1_digest', $1.sha1_digest, 
+'archived', $1.archived)
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.claim_attachments(integer)
+ RETURNS json
+ LANGUAGE sql
+AS $function$  
+SELECT json_build_object(
+'_type', 'claim-attachments', '_id', $1,
+'attachments', (SELECT json_agg(a) FROM 
+                 (SELECT jsi.claim_attachment(attachment) AS a
+                   FROM attachment WHERE claim_id = $1 
+                   ORDER BY date) AS foo)
+)
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.contract_summary(contract)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+ 
+   SELECT pongo.json_strip_nulls(json_build_object(
+     '_type', 'contract_summary',
+     '_id', $1.contract_id,
+     'contract_number', $1.contract_number, 
+     'effective_date', $1.effective_date::date,
+     'expiry_date', $1.expiry_date::date, 
+     'agency', jsi.corpus_summary($1.agency_id),
+     'insurance_company', jsi.corpus_summary($1.insurance_company_id),
+     'syndicate', jsi.corpus_summary($1.syndicate_id),
+     'london_broker', jsi.corpus_summary($1.london_broker_id),
+     'authority', (SELECT jsi.price(ca.authority) FROM contract_authority AS ca
+                    WHERE contract_id = $1.contract_id)
+    ));
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.corpus_summary(person_id integer)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+ SELECT jsi.corpus_summary(person) FROM person WHERE person_id = $1
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.ensure_timecard(_tj json)
+ RETURNS timecard
+ LANGUAGE sql
+AS $function$
+  SELECT jsi.ensure_timecard(($1->>'claim_id')::INTEGER, _tj);
+ $function$
+	;
+CREATE OR REPLACE FUNCTION jsi.claim_authority(claim_id integer)
+ RETURNS json
+ LANGUAGE sql
+AS $function$ 
+  SELECT jsi.claim_authority(claim) FROM claim WHERE claim_id = $1
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.claim_headings_balance(claim)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+  SELECT json_agg(json_build_object(
+   'heading', heading, 
+   'outstanding_reserve', jsi.price(outstanding_reserve),
+   'total_paid', jsi.price(total_paid),
+   'limit_of_cover', (select jsi.price(limit_of_cover) FROM claim_transaction
+                                 WHERE claim_id = $1.claim_id
+                                   AND transaction_heading = info.heading
+                                   AND limit_of_cover IS NOT NULL)
+
+               
+   ))
+   FROM claim_info_by_heading($1.claim_id) as info
+   WHERE total_paid > 0
+   OR outstanding_reserve > 0
+  $function$
+	;
+CREATE OR REPLACE FUNCTION jsi.claim_diary(integer)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+
+ WITH des AS (
+   SELECT de FROM 
+    (SELECT jsi.diary_entry(diary_entry) AS de
+     FROM diary_entry
+     WHERE claim_id = $1) AS des 
+   ORDER BY 
+             CASE WHEN ((de->'outstanding')::text = 'true'::text)
+                THEN 0 ELSE 1 END,
+             CASE WHEN ((de->'processed')::text = 'false'::text)
+                THEN 0 ELSE 1 END,
+             (de->'deadline')::text::date,
+              (de->'_id')::text::integer
+
+ ), outstanding AS (
+  SELECT json_agg(de->'_id') AS o
+   from des WHERE (de->'outstanding')::text = 'true'
+)
+
+ SELECT json_build_object(
+  '_type', 'claim-diary',
+  '_id', $1,
+  'outstanding',COALESCE((SELECT o from outstanding),
+                     array_to_json(ARRAY[]::integer[])), 
+  'entries', COALESCE((select json_agg(de) FROM des),
+                     array_to_json(ARRAY[]::json[]))
+ );
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.claim_group(claim)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+        SELECT json_strip_nulls(to_json(grp.*)) FROM (
+
+        SELECT $1.group_leader_id AS leader,
+               (SELECT array_agg(
+                json_build_object('claim_id', claim_id, 'percent', subscription_percent)
+                )
+                FROM claim
+                WHERE group_leader_id = $1.group_leader_id
+                AND group_leader_id IS NOT NULL
+                AND claim_id != $1.claim_id) AS peers,
+                (SELECT array_agg(
+                   json_build_object('claim_id', claim_id, 'percent', subscription_percent)
+                  )
+                 FROM claim
+                 WHERE group_leader_id = $1.claim_id
+                ) AS followers
+
+        ) grp;
+
+
+  $function$
+	;
+CREATE OR REPLACE FUNCTION jsi.ensure_timecard(_claim_id integer, _tj json)
+ RETURNS timecard
+ LANGUAGE plpgsql
+AS $function$
+
+ DECLARE
+  _timecard timecard;
+  _date timestamp with time zone := (_tj->>'date')::timestamp with time zone;
+  _notes TEXT := _tj->>'notes'; 
+ BEGIN
+
+ SELECT timecard.* INTO _timecard
+  FROM timecard
+  WHERE claim_id = _claim_id
+  AND _notes = notes AND _date = timecard.date;
+
+ IF (_timecard.timecard_id IS NULL AND _claim_id IS NOT NULL) THEN
+  INSERT INTO timecard(claim_id, date, notes)
+  VALUES (_claim_id, _date, _notes)
+  RETURNING timecard.* INTO _timecard;
+ END IF;
+ RETURN _timecard;
+END $function$
+	;
+CREATE OR REPLACE FUNCTION jso."user"(_uid integer, _args json DEFAULT '{}'::json)
+ RETURNS json
+ LANGUAGE sql
+ STABLE
+AS $function$
+ SELECT to_json(usr)
+   FROM (
+     SELECT u.*
+            , CASE WHEN (g.group_id IS NOT NULL)
+              THEN
+                 g.members
+              ELSE NULL
+              END
+               AS group_members
+            , jso.corpus(person_id) AS corpus
+            , (SELECT array_agg(m.group_id) FROM "user".group AS m WHERE u.user_id = ANY (m.members))
+              AS group_membership
+
+       FROM "user"."user" u
+              LEFT JOIN "user".group g ON (user_id = group_ID)
+  WHERE user_id = $1
+
+) usr 
+ $function$
+	;
+CREATE OR REPLACE FUNCTION jsi.contract_summary(contract_id integer)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+   SELECT jsi.contract_summary(contract) FROM contract WHERE contract_id = $1 ;
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.claim_summary(claim_id integer)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+ -- uses claim without schema
+  SELECT jsi.claim_summary(claim) from claim WHERE claim_id = $1;
+ $function$
+	;
+CREATE OR REPLACE FUNCTION jsi.claim_summary(claim)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+  SELECT
+    pongo.json_strip_nulls(
+          json_build_object(
+   '_type', 'claim-summary', 
+   '_id', $1.claim_id,
+   'status', $1.status,
+   'date_of_loss', $1.date_of_loss::date,      
+   'examiner', jsi.corpus_summary($1.adjuster_id),     
+   'risk', jsi.risk_summary($1.risk_id) 
+  ))
+
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.claim_timelog(integer)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+
+   WITH RECURSIVE total AS (
+     -- The Total
+    SELECT now() AS date, jsi.timecard_interim(null::timecard_interim, 
+             'timecard-total', 
+             (SELECT MIN(date) FROM timecard WHERE claim_id = $1),
+             now(), $1) AS jso
+   -- The Continual 
+   UNION ALL
+    SELECT (SELECT MAX(date) + INTERVAL '1 second' FROM timecard WHERE claim_id = $1)
+             AS date,
+      jsi.timecard_interim(null::timecard_interim, 
+      'timecard-continual', 
+      COALESCE((SELECT MAX(date) FROM timecard_interim WHERE claim_id = $1),
+               (SELECT MIN(date) FROM timecard WHERE claim_id = $1)),
+      (SELECT MAX(date) + INTERVAL '1 second' FROM timecard WHERE claim_id = $1),
+       $1) AS jso
+   UNION ALL
+     SELECT date, jsi.timecard_interim(timecard_interim) AS jso
+     FROM timecard_interim
+     WHERE claim_id = $1
+   UNION ALL 
+     SELECT date, jsi.timecard(timecard) AS jso
+     FROM timecard
+     WHERE claim_id = $1
+  )
+
+  SELECT json_agg(jso) FROM (SELECT jso FROM total ORDER BY date) AS log
+ 
+
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.timecard(integer)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+ SELECT jsi.timecard(timecard) FROM timecard WHERE timecard_id = $1;
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.timecard(timecard)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+    SELECT pongo.json_strip_nulls(json_build_object(
+   '_type', 'claim-timecard',
+   '_id', $1.timecard_id,
+   'claim_id', $1.claim_id,
+   'date', $1.date,
+   'user', jsi.user_summary($1.app_user_id), 
+   'notes', $1.notes, 
+   'billable_hours', $1.minutes,
+   'unbillable_hours', $1.unbillable_hours,
+   'mileage', $1.mileage_km, 
+   'disbursement', $1.disbursements, 
+   'attachment', jsi.claim_attachment($1.attachment_id),
+   'interim_id', (SELECT timecard_interim_id FROM timecard_interim
+                   WHERE date > $1.date AND claim_id = $1.claim_id ORDER BY date ASC LIMIT 1)   
+  ));
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.timecard_interim(interim_id integer)
+ RETURNS json
+ LANGUAGE sql
+AS $function$ 
+  SELECT jsi.timecard_interim(timecard_interim) 
+  FROM timecard_interim WHERE timecard_interim_id = $1 ;
+$function$
+	;
+CREATE OR REPLACE FUNCTION jso.contract(contract, _options json DEFAULT '{}'::json)
+ RETURNS json
+ LANGUAGE sql
+ STABLE
+AS $function$
+ 
+   SELECT json_strip_nulls(json_build_object(
+     'contract_id', $1.contract_id,
+     'contract_number', $1.contract_number, 
+     'effective_date', $1.effective_date::date,
+     'expiry_date', $1.expiry_date::date, 
+     'agency', jso.corpus($1.agency_id),
+     'insurance_company', jso.corpus($1.insurance_company_id),
+     'syndicate', jso.corpus($1.syndicate_id),
+     'london_broker', jso.corpus($1.london_broker_id),
+     'authority', (SELECT jso.price(ca.authority) FROM contract_authority AS ca
+                    WHERE contract_id = $1.contract_id)
+    ));
+$function$
+	;
+CREATE OR REPLACE FUNCTION jso.corpus(person_id integer, _args json DEFAULT '{}'::json)
+ RETURNS json
+ LANGUAGE sql
+ STABLE
+AS $function$
+   SELECT jso.corpus(person, $2) FROM person WHERE person_id = $1
+  $function$
+	;
+CREATE OR REPLACE FUNCTION jsi.diary_entry(diary_entry)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+
+ SELECT json_build_object(
+  '_type', 'diary_entry',
+  '_id', $1.diary_entry_id,
+  'claim_id', $1.claim_id,
+  'processed', $1.processed,
+  'outstanding', (CASE WHEN (diary_entry_deadline($1) < now() 
+                             AND NOT $1.processed)
+                  THEN true ELSE false
+                  END),
+  'schedule', $1.action_date,
+  'deadline', diary_entry_deadline($1),
+  'deferred', COALESCE (
+              (SELECT json_agg(defer_date) FROM
+                (SELECT defer_date
+                 FROM defer_diary_entry
+                 WHERE diary_entry_id = $1.diary_entry_id
+                 ORDER BY defer_date) AS dd),
+
+              array_to_json(ARRAY[]::integer[])),
+  'user', jsi.user_summary($1.app_user_id),
+  'note', $1.note);
+
+$function$
+	;
+CREATE OR REPLACE FUNCTION jso.claim(claim_id integer, json DEFAULT '{}'::json)
+ RETURNS json
+ LANGUAGE sql
+ STABLE
+AS $function$
+ -- uses claim without schema
+  SELECT jso.claim(claim, $2) from claim WHERE claim_id = $1;
+ $function$
+	;
+CREATE OR REPLACE FUNCTION jso.claim(claim, _options json DEFAULT '{}'::json)
+ RETURNS json
+ LANGUAGE sql
+ STABLE
+AS $function$
+  SELECT
+  json_strip_nulls(
+    json_build_object(
+   'claim_id', $1.claim_id,
+   'status', $1.status,
+   'status_detail', jsi.claim_status_detail($1),
+    -- Associates
+   'examiner', jso.corpus($1.adjuster_id),
+   'adjuster', jso.corpus($1.external_adjuster_id),
+   'claimant', jso.corpus($1.plaintiff_id),
+   'coverage_counsel', jso.corpus($1.coverage_counsel_id),
+   'defense_counsel', jso.corpus($1.defense_counsel_id),
+   'restoration_firm_emergency', jso.corpus($1.restoration_firm_emergency_id),
+   'restoration_firm_repair', jso.corpus($1.restoration_firm_repair_id),
+    -- Metadata
+   'metadata', jso.metadata($1),
+    -- Timeline
+    'timeline', jso.timeline($1),
+   'date_of_loss', $1.date_of_loss::date,
+   'balance', jso.balance($1),
+   'risk', jso.risk($1.risk_id),
+   'cause', jso.claim_cause($1),
+   'loss', jso.loss($1),
+   'authority', jsi.claim_authority($1),
+   'subscription_percent', $1.subscription_percent::numeric,
+   'timecards', (SELECT json_agg(sub.t) FROM (SELECT to_json(tr) AS t
+                                       FROM timecard_report AS tr
+                                      WHERE tr.claim_id = $1.claim_id 
+                                      ORDER BY date) AS sub),
+   'outstanding_diary',  (SELECT json_agg(jsi.diary_entry(diary_entry)) FROM diary_entry
+
+                           WHERE diary_entry_id
+                                 IN (SELECT DISTINCT diary_entry_id
+                                       FROM diary_entry
+                                      WHERE claim_id = $1.claim_id
+                                        AND diary_entry_is_outstanding(diary_entry))),
+   'transactions', (SELECT json_agg(t.t)
+                    FROM
+                     (SELECT jso.transaction(t) AS t
+                      FROM claim_transaction AS t
+                      WHERE t.claim_id = $1.claim_id
+                      ORDER BY t.transaction_date, t.transaction_id) AS t),
+   'attachments', (SELECT json_agg(ja) FROM 
+                    (SELECT jso.claim_attachment(ca) ja
+                       FROM claim_attachment AS ca
+                         WHERE ca.claim_id = $1.claim_id
+                      ORDER BY date) ob),
+   'diary', (SELECT jsi.claim_diary($1.claim_id))
+  ))
+
+$function$
+	;
+CREATE OR REPLACE FUNCTION jso.claim_attachment(claim_attachment)
+ RETURNS json
+ LANGUAGE sql
+ STABLE
+AS $function$
+  SELECT to_json(atat) FROM
+  (SELECT $1.filename, $1.sha1, $1.claim_id, $1.date, $1.description,
+          jso.user($1.user_id), af.mime
+     FROM attachment_file AS af
+    WHERE af.sha1 = $1.sha1) atat;
+$function$
+	;
+CREATE OR REPLACE FUNCTION jso.claim_cause(claim_id integer)
+ RETURNS json
+ LANGUAGE sql
+AS $function$ 
+   SELECT jso.claim_cause(claim) FROM claim WHERE claim_id = $1
+ $function$
+	;
+CREATE OR REPLACE FUNCTION jso.claim_cause(claim)
+ RETURNS json
+ LANGUAGE sql
+AS $function$ 
+   SELECT json_build_object(
+    'description', claim_cause_type,
+    'code', cause_code)
+   FROM claim_cause WHERE claim_cause_type = $1.cause
+ $function$
+	;
+CREATE OR REPLACE FUNCTION jso.contract(contract_id integer, _options json DEFAULT '{}'::json)
+ RETURNS json
+ LANGUAGE sql
+ STABLE
+AS $function$
+   SELECT jso.contract(contract) FROM contract WHERE contract_id = $1 ;
+$function$
+	;
+CREATE OR REPLACE FUNCTION jso.price(double precision)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+    SELECT to_char($1, 'FM9999999999999999999900D00')
+  $function$
+	;
+CREATE OR REPLACE FUNCTION jso.price(numeric)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+    SELECT to_char($1, 'FM9999999999999999999900D00')
+  $function$
+	;
+CREATE OR REPLACE FUNCTION jso.risk(risk_id integer, _options json DEFAULT '{}'::json)
+ RETURNS json
+ LANGUAGE sql
+ STABLE
+AS $function$
+         SELECT jso.risk(risk, $2) FROM risk WHERE risk_id = $1 ;
+      $function$
+	;
+CREATE OR REPLACE FUNCTION jsi.ensure_claim(_claim json)
+ RETURNS claim
+ LANGUAGE plpgsql
+AS $function$
+
+      DECLARE
+       _db_claim claim;
+       _date_of_loss DATE ;
+       _risk json := _claim->'risk';
+       _db_risk risk;
+       _examiner person;
+       _claimant person;
+       _loss json := _claim->'loss';
+       _status_detail json := _claim->'status_detail';
+       _open_date DATE;
+       _reopen_date DATE;
+       _close_date DATE;
+       _received_date DATE := NULL::DATE;
+       _acknowledged_date DATE := NULL::DATE;
+       _deductible numeric(10,2) := 0;
+      BEGIN
+
+      IF (_loss IS NOT NULL) THEN
+        _date_of_loss := _loss->>'date';
+      END IF;
+
+      IF (_claim->>'balance' IS NOT NULL) THEN
+         _deductible := ((_claim->'balance')->>'deductible')::numeric;
+      END IF;
+
+
+      _date_of_loss := COALESCE(_date_of_loss, (_claim->>'date_of_loss')::date);
+
+      IF (_status_detail IS NOT NULL AND  _status_detail->>'open_date'IS NOT NULL)
+       THEN _open_date := (_status_detail->>'open_date')::date ;
+      END IF;
+
+      _open_date := COALESCE(_open_date, now()::date);
+
+
+      IF (_status_detail IS NOT NULL AND  _status_detail->>'reopen_date'IS NOT NULL)
+       THEN _reopen_date := (_status_detail->>'reopen_date')::date ;
+      END IF;
+      IF (_status_detail IS NOT NULL AND  _status_detail->>'close_date'IS NOT NULL)
+       THEN _close_date := (_status_detail->>'close_date')::date ;
+      END IF;
+
+        IF (_status_detail IS NOT NULL AND  _status_detail->>'received_time'IS NOT NULL)
+        THEN _received_date := (_status_detail->>'receive_date')::date ;
+          END IF;
+
+        IF (_status_detail IS NOT NULL AND  _status_detail->>'acknowledged_time'IS NOT NULL)
+        THEN _acknowledged_date := (_status_detail->>'acknowledged_date')::date ;
+        END IF;
+
+      _db_risk := jsi.ensure_risk(_risk);
+
+      _examiner := jsi.ensure_corpus(_claim->'examiner'); 
+      IF ((_claim->>'claimant') IS NOT NULL AND pg_typeof((_claim->'claimant'))::text = 'json'
+          AND ((_claim->'claimant')->>'last_name' IS NOT NULL OR (_claim->'claimant')->>'company_name' IS NOT NULL))
+       THEN _claimant := jsi.ensure_corpus(_claim->'claimant'); 
+      END IF;
+      
+      SELECT claim.* INTO _db_claim
+       FROM claim RIGHT JOIN import_claim USING (claim_id)
+       WHERE risk_id = _db_risk.risk_id
+       AND date_of_loss = _date_of_loss
+       AND (info::text = (_claim->'import')::text OR (_claim->'import') IS NULL) ;
+
+      IF (_db_claim IS NULL) THEN
+       INSERT INTO claim(status, risk_id, date_of_loss,
+                          open_date, close_date, deductible,
+       claim_received_time, claim_acknowledged_time, rev_date,
+       --  close_date, line_of_business, 
+       --deductible, refer_to_underwriters,
+       --authority, coverage_counsel_id, defense_counsel_id,
+       plaintiff_id, adjuster_id)
+       VALUES (_claim->>'status', _db_risk.risk_id, _date_of_loss::timestamp without time zone, 
+               _open_date, _close_date, _deductible,
+         _received_date, _acknowledged_date, _reopen_date, 
+
+         -- _line_of_business, 
+        -- _deductible, _refer_to_underwriters, _authority,
+         --_coverage_counsel_id, _defense_counsel_id,
+        _claimant.person_id, 
+        _examiner.person_id)
+       RETURNING claim.* INTO _db_claim;
+
+       INSERT INTO import_claim(claim_id, import_claim_id, info, imported_from, date)
+      VALUES (_db_claim.claim_id,_db_claim.claim_id,  (_claim->'import'), (_claim->'import')->>'from', now()) ;
+
+      IF (_loss IS NOT NULL) THEN
+       PERFORM jsi.ensure_claim_loss(_db_claim.claim_id, _loss);
+      END IF;
+
+      END IF;
+      RETURN _db_claim;
+     END $function$
+	;
+CREATE OR REPLACE FUNCTION jsi.ensure_claim_loss(_claim_id integer, _loss json)
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+    DECLARE
+    BEGIN
+
+     INSERT INTO claim_claim_detail(claim_id,claim_detail_id, detail_text)
+       VALUES (_claim_id, (SELECT claim_detail_id FROM claim_detail 
+                            RIGHT JOIN claim_detail_type USING (claim_detail_type_id) 
+                           RIGHT JOIN risk USING (risk_type_name) 
+                          RIGHT JOIN claim USING (risk_id)
+
+                           WHERE code = _loss->>'code' AND claim.claim_id = $1),
+        _loss->>'description');
+
+   INSERT INTO loss_detail(claim_id, key, value)
+     VALUES (_claim_id, 'Loss Location', (_loss->'address')->>'line1') ;
+   INSERT INTO loss_detail(claim_id, key, value)
+     VALUES (_claim_id, 'Loss Location #2', (_loss->'address')->>'line2') ;
+   INSERT INTO loss_detail(claim_id, key, value)
+     VALUES (_claim_id, 'Loss City', (_loss->'address')->>'city') ;
+    INSERT INTO loss_detail(claim_id, key, value)
+     VALUES (_claim_id, 'Loss Province', (_loss->'address')->>'province') ;
+    INSERT INTO loss_detail(claim_id, key, value)
+     VALUES (_claim_id, 'Loss Postal Code', (_loss->'address')->>'postal_code') ;
+    INSERT INTO loss_detail(claim_id, key, value)
+     VALUES (_claim_id, 'Loss Country', 'CA');
+
+     IF (_loss->>'catastrophe' ILIKE 'Fort McMurray%') THEN
+      INSERT INTO loss_detail(claim_id, key, value)
+       VALUES (_claim_id, 'Cat Name', 'Fort McMurray Wildfire');
+      INSERT INTO loss_detail(claim_id, key, value)
+       VALUES (_claim_id, 'Cat Code', '16D');
+     END IF;
+
+    RETURN jsi.loss(_claim_id);
+ END $function$
+	;
+CREATE OR REPLACE FUNCTION jsi.ensure_contract(_contract json, _options json DEFAULT '{"must_exist" : false, "update" : false}'::json)
+ RETURNS contract
+ LANGUAGE plpgsql
+AS $function$
+
+    DECLARE
+      _db_contract contract;
+      _must_exist BOOLEAN := (_options->>'must_exist')::boolean;
+      _update BOOLEAN := (_options->>'update')::boolean;
+      _contract_number TEXT := _contract->>'contract_number';
+      _effective_date DATE := _contract->>'effective_date';
+      _expiry_date DATE := _contract->>'expiry_date';
+      _agency JSON := _contract->'agency';
+      _db_agency person;
+      _syndicate JSON := _contract->'syndicate';
+      _db_syndicate person;
+      _london_broker JSON := _contract->'london_broker';
+      _db_london_broker person;
+    BEGIN
+
+    IF (_update IS NOT NULL AND _update) THEN
+       RAISE EXCEPTION 'Update of Contracts not yet implemented';
+    END IF;
+
+    SELECT contract.* INTO _db_contract
+     FROM contract  
+     WHERE contract_number = _contract_number 
+     AND (_effective_date IS NULL OR effective_date = _effective_date)
+     AND (_expiry_date IS NULL OR expiry_date = _expiry_date);
+
+    IF (_db_contract IS NULL AND _must_exist) THEN
+     RAISE EXCEPTION 'Contract % must exist', _contract;
+    END IF;
+
+    IF (_db_contract IS NULL) THEN
+      IF (_agency::TEXT IS NOT NULL)
+       THEN _db_agency := jsi.ensure_corpus(_agency);
+     END IF;
+     IF (_syndicate::TEXT IS NOT NULL)
+       THEN _db_syndicate := jsi.ensure_corpus(_syndicate);
+     END IF;
+     IF (_london_broker::TEXT IS NOT NULL)
+       THEN _db_london_broker := jsi.ensure_corpus(_london_broker);
+     END IF;
+     INSERT INTO contract(
+         contract_number, agency_id, syndicate_id, london_broker_id,
+         effective_date, expiry_date)
+      VALUES (_contract_number, _db_agency.person_id, _db_syndicate.person_id, 
+              _db_london_broker.person_id,
+              _effective_date, _expiry_date)
+      RETURNING contract.* INTO _db_contract;
+    END IF;
+
+    RETURN _db_contract;
+   END $function$
+	;
+CREATE OR REPLACE FUNCTION jsi.ensure_corpus(_corpus json, _options json DEFAULT '{"must_exist" : false,
+                                 "update" : false }'::json)
+ RETURNS person
+ LANGUAGE plpgsql
+AS $function$
+
+      DECLARE
+        _name TEXT := _corpus->>'name';
+        _first_name TEXT := _corpus->>'first_name';
+        _last_name TEXT := _corpus->>'last_name';
+        _company_name TEXT := _corpus->>'company_name';
+        _person person;
+        _names TEXT[] := regexp_split_to_array(_corpus->>'name', ' ');
+        _address JSON := (_corpus->'address');
+        _contact JSON := (_corpus->'contact');
+        _must_exist BOOLEAN := (_options->>'must_exist')::boolean;
+        _update BOOLEAN := (_options->>'update')::boolean;
+      BEGIN
+         -- If we just pass a string, it must exist. 
+        IF ((json_typeof(_corpus) ='string'))
+        THEN
+          _name := (json_build_object ('_', _corpus))->>'_';
+          _must_exist := true;
+        END IF;
+
+       SELECT person.* INTO _person
+       FROM person
+       WHERE  person_name(person_id)LIKE _name
+             OR (_name IS NULL AND person_name(person_id) 
+               LIKE person_name(json_populate_record(null::person
+                     , json_build_object('first_name', _first_name
+                                          ,'last_name', _last_name
+                                          ,'company_name', _company_name))));
+
+
+      IF ((_person IS NULL) AND _must_exist) THEN
+        RAISE EXCEPTION 'This person must exist: %', _name;
+      END IF;
+
+      IF (_person IS NULL) THEN
+
+         _update := true; 
+
+         -- If there are only 2 names, it's a person
+         IF (_first_name IS NULL AND _last_name IS NULL 
+             AND _company_name IS NULL AND array_length(_names, 1) = 2) THEN
+           INSERT INTO person(first_name, last_name) VALUES (_names[1], _names[2])
+             RETURNING person.* INTO _person;
+         ELSEIF (_first_name IS NULL AND _last_name IS NULL 
+             AND _company_name IS NULL AND _name IS NOT NULL) THEN
+           INSERT INTO person(company_name) VALUES (_name)
+             RETURNING person.* INTO _person;
+         ELSE INSERT INTO person(first_name, last_name, company_name) 
+               VALUES (_first_name, _last_name, _company_name)
+             RETURNING person.* INTO _person;
+         END IF;
+
+      END IF;
+
+      IF (_update IS NOT NULL AND _update AND _address IS NOT NULL) THEN
+         UPDATE person SET address1 = _address->>'line1',
+                           address2 = _address->>'line2',
+                           city = _address->>'city', 
+                           province_state_id = (SELECT province_state_id 
+                                                FROM province_state
+                                                WHERE short_name ILIKE _address->>'province'
+                                                OR long_name ILIKE _address->>'province'),
+                           postal_code = _address->>'postal_code'
+        WHERE person_id = _person.person_id
+             RETURNING person.* INTO _person;
+      END IF;
+
+     IF (_update IS NOT NULL AND _update AND _contact IS NOT NULL) THEN
+       UPDATE person SET home_phone = _contact->>'home_phone',
+                         work_phone = _contact->>'work_phone',
+                         cell_phone = _contact->>'cell_phone',
+                         fax_phone = _contact->>'fax',
+                         email_address = _contact->>'email_address'
+       WHERE person_id = _person.person_id
+       RETURNING person.* INTO _person;
+     END IF;
+
+     RETURN _person;
+
+   END $function$
+	;
+CREATE OR REPLACE FUNCTION jsi.ensure_policy(_policy json, _options json DEFAULT '{"must_exist" : false, "update" : false}'::json)
+ RETURNS policy
+ LANGUAGE plpgsql
+AS $function$
+
+      DECLARE
+        _db_policy policy;
+        _must_exist BOOLEAN := (_options->>'must_exist')::boolean;
+        _update BOOLEAN := (_options->>'update')::boolean;
+        _policy_number TEXT := _policy->>'policy_number';
+        _effective_date DATE := _policy->>'effective_date';
+        _expiry_date DATE := _policy->>'expiry_date';
+        _insured JSON := _policy->'insured';
+        _db_insured person;
+        _agent JSON := _policy->'agent';
+        _db_agent person;
+    BEGIN
+     
+      IF (_update IS NOT NULL AND _update) THEN
+         RAISE EXCEPTION 'Update of Policys not yet implemented';
+      END IF;
+     
+      SELECT policy.* INTO _db_policy
+       FROM policy  
+       WHERE policy_number = _policy_number 
+       AND (_effective_date IS NULL OR effective_date = _effective_date)
+       AND (_expiry_date IS NULL OR expiry_date = _expiry_date);
+
+      IF (_db_policy IS NULL AND _must_exist) THEN
+       RAISE EXCEPTION 'Policy % must exist', _policy;
+      END IF;
+
+      IF (_db_policy IS NULL) THEN
+        IF (_insured::TEXT IS NOT NULL)
+         THEN _db_insured := jsi.ensure_corpus(_insured);
+       END IF;
+        IF (_agent::TEXT IS NOT NULL)
+         THEN _db_agent := jsi.ensure_corpus(_agent);
+       END IF;
+     INSERT INTO policy(policy_number, insured_id, agent_id, effective_date, expiry_date)
+       VALUES (_policy_number, _db_insured.person_id, _db_agent.person_id, _effective_date, _expiry_date)
+       RETURNING policy.* INTO _db_policy;
+      END IF;
+
+      RETURN _db_policy;
+     END $function$
+	;
+CREATE OR REPLACE FUNCTION jsi.ensure_reserve(_claim_id integer, _reserve json)
+ RETURNS claim_transaction
+ LANGUAGE plpgsql
+AS $function$
+     DECLARE
+       _tranny claim_transaction;
+       _date timestamp without time zone := _reserve->>'date';
+       _heading text := _reserve->>'heading';
+       _amount numeric(10,2) := (_reserve->>'amount')::numeric(10,2);
+       _type INTEGER ;
+     BEGIN
+
+     SELECT t.* INTO _tranny 
+      FROM  claim_transaction AS t
+      WHERE t.claim_id = _claim_id
+      AND (t.transaction_type_id IN (1,2))
+      AND t.transaction_heading = _heading  AND t.transaction_date = _date
+      AND t.amount = _amount ;
+
+     -- If there's no claim, we don't import.
+     IF (_tranny IS NULL AND _claim_id IS NOT NULL) THEN
+
+      -- If there's one 1 in the past with the same heading, this is an adjustment.
+       SELECT transaction_type_id INTO _type
+        FROM claim_transaction AS t
+        WHERE t.claim_id = _claim_id 
+        AND t.transaction_date <= _date
+        AND t.transaction_heading = _heading
+
+        AND (t.transaction_type_id IN (1,2));
+
+        IF (_type IS NULL) THEN
+          _type := 1;
+        ELSE
+          _type := 2;
+        END IF;
+
+      INSERT INTO claim_transaction(claim_id, transaction_type_id, 
+                                    transaction_heading, transaction_date, 
+                                    amount)
+       VALUES (_claim_id, _type, 
+               _heading, _date, _amount)
+        RETURNING claim_transaction.* INTO _tranny;
+     END IF;
+
+     RETURN _tranny;
+    END $function$
+	;
+CREATE OR REPLACE FUNCTION jsi.ensure_risk(_risk json)
+ RETURNS risk
+ LANGUAGE plpgsql
+AS $function$
+
+    DECLARE
+     _type TEXT := COALESCE(_risk->>'type', 'Commercial');
+     _db_risk risk;
+     _policy policy;
+     _contract contract;
+    BEGIN
+                             
+    _policy := jsi.ensure_policy(_risk->'policy');
+    _contract := jsi.ensure_contract(_risk->'contract');
+   
+    SELECT risk.* INTO _db_risk
+     FROM risk
+     WHERE risk.policy_id = _policy.policy_id
+     AND risk.contract_id = _contract.contract_id
+     AND risk.risk_type_name = _type;
+
+    IF (_db_risk IS NULL) THEN
+     INSERT INTO risk(risk_type_name, policy_id, contract_id)
+     VALUES (_type, _policy.policy_id, _contract.contract_id) RETURNING risk.* INTO _db_risk;
+    END IF;
+
+    RETURN _db_risk;
+   END $function$
+	;
+CREATE OR REPLACE FUNCTION jsi.ensure_transaction(_claim_id integer, _transaction json)
+ RETURNS claim_transaction
+ LANGUAGE plpgsql
+AS $function$
+
+   DECLARE
+     _tranny claim_transaction;
+     _date timestamp without time zone := _transaction->>'date';
+     _heading text := _transaction->>'heading';
+     _amount numeric(10,2) := (_transaction->>'amount')::numeric(10,2);
+     _type TEXT := _transaction->>'type';
+     _cheque_number TEXT := _transaction->>'cheque_number';
+     _payee JSON := _transaction->'payee';
+     _db_payee person;
+     _reference_number TEXT := _transaction->'reference_number';
+     _schemes_advance_number TEXT := _transaction->'schemes_advance_number';
+   BEGIN
+
+   SELECT t.* INTO _tranny 
+    FROM  claim_transaction AS t
+    WHERE t.claim_id = $1
+   AND (t.transaction_type_id = (SELECT claim_transaction_type_id
+                                 FROM claim_transaction_type
+                                 WHERE (description = _type)))
+    AND t.transaction_heading = _heading  AND t.transaction_date = _date
+    AND t.amount = _amount ;
+
+   IF (_payee IS NOT NULL) THEN
+     _db_payee := jsi.ensure_corpus(_payee);
+   END IF;
+   IF (_tranny.claim_id IS NULL AND _claim_id IS NOT NULL) THEN
+    INSERT INTO claim_transaction(claim_id, transaction_type_id, 
+                                  transaction_heading, transaction_date, 
+                                  amount, cheque_number, payee_id,
+                                   reference_number, schemes_advance_number)
+     VALUES (_claim_id, (SELECT claim_transaction_type_id
+                  FROM claim_transaction_type
+                  WHERE description = _type), 
+                  _heading, _date, _amount, 
+                  COALESCE(_cheque_number, ''), _db_payee.person_id
+                 , _reference_number, _schemes_advance_number)
+                  RETURNING claim_transaction.* INTO _tranny;
+   END IF;
+
+   RETURN _tranny;
+  END $function$
+	;
+CREATE OR REPLACE FUNCTION jsi.login_session(_lid uuid)
+ RETURNS json
+ LANGUAGE sql
+ STABLE
+AS $function$
+
+       SELECT to_json(s)
+       FROM
+         (SELECT jsi.request_user_record(app_user), until AS active_until,
+                  (login.session(_lid)).data AS data
+           FROM login.active
+                  JOIN login.login USING(id)
+                  JOIN app_user ON (user_id = app_user_id)
+           WHERE id = _lid
+         ) AS s ;
+     $function$
+	;
+CREATE OR REPLACE FUNCTION jsi.loss_catastrophe(claim_id integer)
+ RETURNS json
+ LANGUAGE sql
+AS $function$ 
+  SELECT jsi.loss_catastrophe(claim) FROM claim WHERE claim_id = $1
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.loss_catastrophe(claim)
+ RETURNS json
+ LANGUAGE sql
+AS $function$  
+  SELECT pongo.json_strip_nulls(json_build_object(
+   'name', (SELECT value FROM loss_detail 
+                      WHERE claim_id = $1.claim_id 
+                      AND key = 'Cat Name' 
+                      LIMIT 1),
+   'code', (SELECT value FROM loss_detail 
+                      WHERE claim_id = $1.claim_id 
+                      AND key = 'Cat Code'
+                      LIMIT 1)
+    ))
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.loss_code(claim_detail_id integer)
+ RETURNS json
+ LANGUAGE sql
+AS $function$ 
+  SELECT jsi.loss_code(claim_detail) FROM claim_detail WHERE claim_detail_id = $1
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.loss_code(claim_detail)
+ RETURNS json
+ LANGUAGE sql
+AS $function$ 
+  SELECT json_build_object(
+   'code', $1.code,
+   'description', $1.description,
+   'risk_type', dt.risk_type_name)
+  FROM claim_detail_type AS dt
+  WHERE claim_detail_type_id = $1.claim_detail_type_id
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.loss_location(claim_id integer)
+ RETURNS json
+ LANGUAGE sql
+AS $function$ 
+  SELECT jsi.loss_location(claim) FROM claim WHERE claim_id = $1
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.loss(claim_id integer)
+ RETURNS json
+ LANGUAGE sql
+AS $function$ 
+  SELECT jsi.loss(claim) FROM claim WHERE claim_id = $1
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.price(numeric)
+ RETURNS text
+ LANGUAGE sql
+AS $function$
+  SELECT to_char($1, 'FM9999999999999999999900D00')
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.province(person)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+ SELECT pongo.json_strip_nulls(json_build_object(
+   '_type', 'province', 
+   '_id', $1.province_state_id,
+   'short_name', short_name, 
+   'long_name', long_name
+   ))
+  FROM province_state WHERE $1.province_state_id = province_state_id
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.risk_summary(risk)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+   SELECT pongo.json_strip_nulls(json_build_object(
+      '_type', 'risk-summary',
+      '_id', $1.risk_id,
+      'risk_type', $1.risk_type_name,
+      'risk_code', $1.risk_code,
+      'policy', jsi.policy_summary($1.policy_id), 
+      'contract', jsi.contract_summary($1.contract_id), 
+      'claims', (SELECT json_agg(claim_id) 
+                  FROM (SELECT claim_id FROM claim WHERE risk_id = $1.risk_id
+                        ORDER BY claim_id) AS c)
+               
+     )) ;
+  $function$
+	;
+CREATE OR REPLACE FUNCTION jsi.request_user(uid integer)
+ RETURNS json
+ LANGUAGE sql
+ STABLE
+AS $function$
+  SELECT to_json(jsi.request_user_record($1));
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.request_user_record(user_id integer)
+ RETURNS record
+ LANGUAGE sql
+ STABLE
+AS $function$
+  SELECT jsi.request_user_record(app_user) FROM app_user WHERE app_user_id = $1;
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.request_user_record(app_user)
+ RETURNS record
+ LANGUAGE sql
+ STABLE
+AS $function$
+  SELECT $1.app_user_id AS user_id, $1.username AS username,
+         jsi.app_user_role($1) AS db_role, $1.admin AS administrator
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.risk_claim_summary(claim_id integer)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+ -- uses claim without schema
+  SELECT jsi.claim_summary(claim) from claim WHERE claim_id = $1;
+ $function$
+	;
+CREATE OR REPLACE FUNCTION jsi.risk_claim_summary(claim)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+  SELECT
+    pongo.json_strip_nulls(
+          json_build_object(
+   '_type', 'claim-summary', 
+   '_id', $1.claim_id,
+   'status', $1.status,
+   'date_of_loss', $1.date_of_loss::date,      
+   'examiner', jsi.corpus_summary($1.adjuster_id)
+  ))
+
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.risk_code_summary(text)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+   SELECT jsi.risk_code_summary(risk_code.*) FROM risk_code WHERE risk_code = $1 ;
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.risk_code_summary(risk_code)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+   SELECT pongo.json_strip_nulls(json_build_object(
+      '_type', 'risk-code-summary',
+      '_id', $1.risk_code,
+      'code', $1.risk_code,
+      'description', $1.description,
+      'first_year_of_account', $1.first_year_of_account, 
+      'last_year_of_account', $1.last_year_of_account, 
+      'terrorism_code', jsi.risk_code_summary($1.terrorism_code)
+     )) ;
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.policy_summary(policy_id integer)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+   SELECT jsi.policy_summary(policy) FROM policy WHERE policy_id = $1 ;
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.policy_summary(policy)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+ 
+   SELECT json_build_object(
+     '_type', 'policy_summary', 
+     '_id', $1.policy_id,
+     'policy_number', $1.policy_number, 
+     'insured', jsi.corpus_summary($1.insured_id),
+     'effective_date', $1.effective_date::date,
+     'expiry_date', $1.expiry_date::date, 
+     'agent', jsi.corpus_summary($1.agent_id),
+     'insurance_company', jsi.corpus_summary($1.company_id),
+     'underwriter', jsi.corpus_summary($1.underwriter_id),
+     'branch', jsi.corpus_summary($1.branch_id),
+     'agency_office', jsi.corpus_summary($1.agency_office_id), 
+     'deductible', jsi.price($1.deductible)
+    );
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.risk_summary(risk_id integer)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+   SELECT jsi.risk_summary(risk) FROM risk WHERE risk_id = $1 ;
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.risk_crux(risk_id integer)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+     SELECT jsi.risk_crux(risk) FROM risk WHERE risk_id = $1 ;
+  $function$
+	;
+CREATE OR REPLACE FUNCTION jsi.risk_crux(risk)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+     SELECT pongo.json_strip_nulls(json_build_object(
+	  '_type', 'risk-crux',
+	  '_id', $1.risk_id,
+	  'risk_type', $1.risk_type_name,
+	  'risk_code', jsi.risk_code_summary($1.risk_code),
+	  'risk_number', $1.risk_number,
+	  'policy', jsi.policy_summary($1.policy_id), 
+	  'contract', jsi.contract_summary($1.contract_id),
+	  'london_broker',
+	  (jsi.contract_summary($1.contract_id))->'london_broker',
+	  'claims', (SELECT json_agg(jsi.risk_claim_summary(claim))
+		     FROM (SELECT * FROM claim WHERE risk_id = $1.risk_id ORDER BY claim_id) AS claim)
+	 )) ;
+    $function$
+	;
+CREATE OR REPLACE FUNCTION jsi.timecard_interim(timecard_interim, type text DEFAULT 'timecard-interim'::text, start_date timestamp with time zone DEFAULT NULL::timestamp with time zone, end_date timestamp with time zone DEFAULT NULL::timestamp with time zone, claim_id integer DEFAULT NULL::integer)
+ RETURNS json
+ LANGUAGE sql
+AS $function$ 
+ WITH start_time AS (
+  SELECT COALESCE($3, (SELECT date FROM timecard_interim
+                    WHERE claim_id = $1.claim_id
+                    AND timecard_interim.date < $1.date
+                    ORDER BY date DESC LIMIT 1),
+                  (SELECT min(date) FROM timecard WHERE claim_id = $1.claim_id))
+         AS time
+  ), timecards AS (
+    SELECT * FROM timecard, start_time
+      WHERE claim_id = (coalesce($5, $1.claim_id))
+      AND timecard.date >= start_time.time
+      AND timecard.date < (coalesce($4,$1.date)) ORDER BY timecard.date)
+    
+ SELECT json_build_object(
+  '_type', $2,
+  '_id', $1.timecard_interim_id,
+  'claim_id', (coalesce($5, $1.claim_id)),
+  'effective_time',(SELECT time FROM start_time), 
+  'expiry_time', (coalesce($4,$1.date)),
+  'billable_hours', (SELECT SUM(minutes) FROM timecards),
+  'unbillable_hours', (SELECT SUM(unbillable_hours) FROM timecards),
+  'mileage', (SELECT SUM(mileage_km) FROM timecards),
+  'disbursement', (SELECT SUM(disbursements)::TEXT FROM timecards),
+  'timecard_ids', (SELECT json_agg(timecard_id) FROM timecards)
+ );
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.timecard_interim_crux(integer)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+
+   SELECT json_object_agg(
+   (CASE key
+     WHEN '_type' THEN 'timecard-interim-crux' 
+     WHEN 'timecard_ids' THEN 'timecards'
+     WHEN 'claim_id' THEN 'claim'
+     ELSE key 
+   END), 
+   (CASE key
+     WHEN 'claim_id' THEN (jsi.claim_summary(value::text::integer))
+     WHEN 'timecard_ids' THEN (SELECT json_agg(tc) FROM
+               (SELECT jsi.timecard(timecard) AS tc
+               FROM timecard 
+               WHERE timecard_id IN (SELECT json_array_elements(value)::text::integer)
+               ORDER BY timecard.date)
+AS t)
+    ELSE value 
+    END))
+
+  FROM (SELECT (json_each(interim)).* 
+        FROM (SELECT jsi.timecard_interim(t) AS interim 
+              FROM timecard_interim AS t 
+              WHERE timecard_interim_id = $1) AS t) AS ti;
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.transaction(claim_transaction)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+ SELECT pongo.json_strip_nulls(json_build_object(
+   '_type', 'transaction', 
+   '_id', $1.transaction_id,
+   'claim_id', $1.claim_id, 
+   'date', $1.transaction_date::date,
+   'transaction_date', $1.transaction_date::timestamp with time zone,
+   'type', (SELECT description 
+            FROM claim_transaction_type 
+            WHERE claim_transaction_type_id = $1.transaction_type_id),
+   'heading', $1.transaction_heading,
+   'amount', $1.amount::text,
+   'limit_of_cover', $1.limit_of_cover::text,
+   'expense_type', $1.expense_type,
+   'cheque', jsi.cheque($1),
+   'approved', $1.approved
+))
+ $function$
+	;
+CREATE OR REPLACE FUNCTION jsi.user_summary(integer)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+  SELECT jsi.user_summary(app_user) 
+   FROM app_user WHERE app_user_id = $1
+$function$
+	;
+CREATE OR REPLACE FUNCTION jso.authority_balance(claim_id integer)
+ RETURNS json
+ LANGUAGE sql
+AS $function$ 
+    SELECT jso.authority_balance(claim) FROM claim WHERE claim_id = $1
+  $function$
+	;
+CREATE OR REPLACE FUNCTION jso.authority_balance(claim)
+ RETURNS json
+ LANGUAGE sql
+AS $function$ 
+    SELECT json_strip_nulls(json_build_object(
+      'over_authority', claim_over_authority($1),
+     'over_authority_date', $1.over_authority::date, 
+     'contract', jso.price(contract_authority($1)),
+     'claim', jso.price($1.authority),
+     'actual', jso.price(claim_authority($1))
+      ))
+  $function$
+	;
+CREATE OR REPLACE FUNCTION jso.balance(claim)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+   SELECT json_build_object(
+     '_type', 'claim_balance', 
+     '_id', $1.claim_id,
+     'deductible', jso.price($1.deductible),
+     'recovered_deductible', jso.price(claim_recovered_deductible($1.claim_id)),
+     'outstanding_deductible', jso.price(claim_deductible($1.claim_id)), 
+     'outstanding_reserve', jso.price(claim_outstanding_reserve($1.claim_id)),
+     'limit_of_cover', jso.price((SELECT sum(limit_of_cover) FROM claim_transaction WHERE claim_id = $1.claim_id)),
+     'total_paid', jso.price(claim_paid($1.claim_id)), 
+     'incurred', jso.price(claim_incurred($1.claim_id)),
+     'authority', jso.authority_balance($1),
+     'headings', jso.headings_balance($1)
+   )
+   $function$
+	;
+CREATE OR REPLACE FUNCTION jso.cheque(claim_transaction)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+   WITH json AS (
+   SELECT json_strip_nulls(json_build_object(
+    'payee', jso.corpus($1.payee_id),
+    'recipient', jso.corpus($1.recipient_id),
+    'cheque_number', CASE WHEN (($1.cheque_number != '')
+                                AND ($1.cheque_number != 'None'))
+                          THEN $1.cheque_number END,
+    'schemes_advance_number',CASE WHEN ($1.schemes_advance_number != '')
+                                  THEN $1.schemes_advance_number END,
+    'reference_number', CASE WHEN ($1.reference_number != '')
+                             THEN $1.reference_number END
+    )) AS cheque)
+
+    SELECT cheque FROM json
+     WHERE (cheque->'payee') IS NOT NULL
+     OR (cheque->'cheque_number') IS NOT NULL
+     OR (cheque->'schemes_advance_number') IS NOT NULL
+     OR (cheque->'reference_number') IS NOT NULL;
+  $function$
+	;
+CREATE OR REPLACE FUNCTION jsi.user_summary(app_user)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+ SELECT json_build_object(
+    '_type', 'user-summary',
+    '_id', $1.app_user_id,
+    'username', $1.username, 
+    'corpus', jsi.corpus_summary($1.person_id),
+    'read_only', app_user_is_read_only($1), 
+    'admin', $1.admin
+   ) ;
+$function$
+	;
+CREATE OR REPLACE FUNCTION jso.corpus(person, _args json DEFAULT '{}'::json)
+ RETURNS json
+ LANGUAGE sql
+ STABLE
+AS $function$
+    SELECT json_strip_nulls(
+      json_build_object(
+        'person_id', $1.person_id,
+        'full_name', person_name($1),
+        'short_name', person_short_name($1),
+        'first_name', CASE WHEN (trim(both from $1.first_name) != '') THEN $1.first_name END,
+        'last_name', CASE WHEN (trim(both FROM $1.last_name) != '') THEN $1.last_name END,
+        'company_name', CASE WHEN (trim(both FROM $1.company_name) != '') THEN $1.company_name END,
+        'email_address', CASE WHEN (trim(both FROM $1.email_address) != '')
+        THEN $1.email_address END,
+        'province', (SELECT
+                       json_build_object(
+                         'short_name', short_name,
+                         'long_name', long_name)
+                       FROM province_state WHERE $1.province_state_id = province_state_id)
+     ))
+  $function$
+	;
+CREATE OR REPLACE FUNCTION jso.headings_balance(claim)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+    SELECT json_agg(json_build_object(
+     'heading', heading,
+     'outstanding_reserve', jso.price(outstanding_reserve),
+     'total_paid', jso.price(total_paid),
+     'limit_of_cover', jso.price(
+       (SELECT limit_of_cover
+          FROM claim_transaction
+
+         WHERE claim_id = $1.claim_id 
+           AND transaction_heading = heading AND transaction_type_id = 1
+           AND limit_of_cover IS NOT NULL)
+    )))
+     FROM (SELECT * FROM claim_info_by_heading($1.claim_id) ORDER BY heading) AS info
+     WHERE total_paid > 0
+     OR outstanding_reserve > 0
+    $function$
+	;
+CREATE OR REPLACE FUNCTION jso.import(claim)
+ RETURNS json
+ LANGUAGE sql
+ STABLE
+AS $function$
+    SELECT json_strip_nulls(json_build_object(
+      'from', COALESCE((info->'from')::text, imported_from),
+      'date', date,
+      'number', COALESCE((info->'number')::text, import_claim_id::text)
+    ))
+   FROM import_claim WHERE claim_id = $1.claim_id
+  $function$
+	;
+CREATE OR REPLACE FUNCTION jso.insert_transaction(json, _options json DEFAULT '{}'::json)
+ RETURNS json
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  _tranny claim_transaction;
+  _type_id INT;
+  _cheque JSON;
+  _cn TEXT DEFAULT NULL;
+  _rn TEXT DEFAULT NULL;
+  _san TEXT DEFAULT NULL ;
+  _pid INT DEFAULT NULL;
+BEGIN
+  SELECT claim_transaction_type_id INTO _type_id
+    FROM claim_transaction_type
+   WHERE description = $1->>'type';
+
+
+  _cheque := $1->'cheque';
+
+  IF (_cheque IS NOT NULL) THEN
+    _cn := _cheque->>'cheque_number';
+    _rn := _cheque->>'reference_number';
+    _san := _cheque->>'schemes_advance_number';
+    _pid := (_cheque->'payee')->>'person_id';
+  END IF;
+
+
+  INSERT INTO claim_transaction(
+    claim_id, transaction_type_id, transaction_date, transaction_heading
+    , limit_of_cover, amount, payee_id, cheque_number
+    , reference_number, schemes_advance_number)
+  VALUES (($1->>'claim_id')::int, _type_id, ($1->>'date')::timestamp without time zone, $1->>'heading'
+          ,($1->>'limit_of_cover')::numeric, ($1->>'amount')::numeric, _pid, _cn
+          , _rn, _san)
+         RETURNING claim_transaction.* INTO _tranny;
+
+  RETURN jso.transaction(_tranny);
+END; $function$
+	;
+CREATE OR REPLACE FUNCTION jso.loss(claim_id integer)
+ RETURNS json
+ LANGUAGE sql
+AS $function$ 
+    SELECT jso.loss(claim) FROM claim WHERE claim_id = $1
+  $function$
+	;
+CREATE OR REPLACE FUNCTION jso.loss(claim)
+ RETURNS json
+ LANGUAGE sql
+AS $function$ 
+    SELECT json_strip_nulls(json_build_object(
+     'date', $1.date_of_loss::date, 
+     'description', detail_text,
+     'loss_code', jso.loss_code(claim_detail_id),
+     'location', jso.loss_location($1),
+     'catastrophe', jso.loss_catastrophe($1)))
+    FROM claim_claim_detail 
+    WHERE claim_id = $1.claim_id
+  $function$
+	;
+CREATE OR REPLACE FUNCTION jso.loss_catastrophe(claim_id integer)
+ RETURNS json
+ LANGUAGE sql
+AS $function$ 
+  SELECT jso.loss_catastrophe(claim) FROM claim WHERE claim_id = $1
+$function$
+	;
+CREATE OR REPLACE FUNCTION jso.loss_catastrophe(claim)
+ RETURNS json
+ LANGUAGE sql
+AS $function$  
+  SELECT json_strip_nulls(json_build_object(
+   'name', (SELECT value FROM loss_detail 
+                      WHERE claim_id = $1.claim_id 
+                      AND key = 'Cat Name' 
+                      LIMIT 1),
+   'code', (SELECT value FROM loss_detail 
+                      WHERE claim_id = $1.claim_id 
+                      AND key = 'Cat Code'
+                      LIMIT 1)
+    ))
+$function$
+	;
+CREATE OR REPLACE FUNCTION jso.loss_code(claim_detail_id integer)
+ RETURNS json
+ LANGUAGE sql
+AS $function$ 
+  SELECT jso.loss_code(claim_detail) FROM claim_detail WHERE claim_detail_id = $1
+$function$
+	;
+CREATE OR REPLACE FUNCTION jso.loss_code(claim_detail)
+ RETURNS json
+ LANGUAGE sql
+AS $function$ 
+  SELECT json_build_object(
+   'code', $1.code,
+   'description', $1.description,
+   'risk_type', dt.risk_type_name)
+  FROM claim_detail_type AS dt
+  WHERE claim_detail_type_id = $1.claim_detail_type_id
+$function$
+	;
+CREATE OR REPLACE FUNCTION jso.loss_location(claim_id integer)
+ RETURNS json
+ LANGUAGE sql
+AS $function$ 
+  SELECT jso.loss_location(claim) FROM claim WHERE claim_id = $1
+$function$
+	;
+CREATE OR REPLACE FUNCTION jso.loss_location(claim)
+ RETURNS json
+ LANGUAGE sql
+AS $function$ 
+  SELECT json_strip_nulls(json_build_object(
+   'line1', (SELECT value FROM loss_detail 
+                      WHERE claim_id = $1.claim_id 
+                      AND key = 'Loss Location' 
+                      LIMIT 1),
+   'line2', (SELECT value FROM loss_detail 
+                      WHERE claim_id = $1.claim_id 
+                      AND key = 'Loss Location #2' 
+                      LIMIT 1), 
+   'city', (SELECT value FROM loss_detail 
+                      WHERE claim_id = $1.claim_id 
+                      AND key = 'Loss City' 
+                      LIMIT 1),
+   'province', (SELECT value FROM loss_detail 
+                      WHERE claim_id = $1.claim_id 
+                      AND key = 'Loss Province' 
+                      LIMIT 1),
+   'country', (SELECT value FROM loss_detail 
+                      WHERE claim_id = $1.claim_id 
+                      AND key = 'Loss Country' 
+                      LIMIT 1),
+   'postal_code', (SELECT value FROM loss_detail 
+                      WHERE claim_id = $1.claim_id 
+                      AND key = 'Loss Postal Code' 
+                      LIMIT 1)
+    ))
+$function$
+	;
+CREATE OR REPLACE FUNCTION jso.metadata(claim)
+ RETURNS json
+ LANGUAGE sql
+ STABLE
+AS $function$
+   SELECT json_strip_nulls(
+     json_build_object(
+       'status', $1.status,
+       'update', (select update FROM claim_update WHERE claim_id = $1.claim_id),
+       'denial', $1.denial,
+       'refer_to_underwriters', $1.refer_to_underwriters,
+       'open_for_recovery', $1.open_for_recovery,
+       'peer_reviewed', $1.peer_reviewed_date,
+       'lineage', $1.lineage,
+       'line_of_business', $1.line_of_business,
+       'industry_code', (SELECT to_json(ibc_code.*)
+                            FROM claim_ibc_code AS cic RIGHT JOIN ibc_code USING (industry)
+                           WHERE  cic.claim_id = $1.claim_id),
+       'coverage', $1.coverage,
+       'import', jso.import($1), 
+       'over_authority', claim_over_authority($1)
+       )
+     );
+   $function$
+	;
+CREATE OR REPLACE FUNCTION jso.policy(policy_id integer, _options json DEFAULT '{}'::json)
+ RETURNS json
+ LANGUAGE sql
+ STABLE
+AS $function$
+     SELECT jso.policy(policy, $2) FROM policy WHERE policy_id = $1;
+  $function$
+	;
+CREATE OR REPLACE FUNCTION jso.policy(policy, _options json DEFAULT '{}'::json)
+ RETURNS json
+ LANGUAGE sql
+ STABLE
+AS $function$
+
+     SELECT json_strip_nulls(json_build_object(
+       'policy_id', $1.policy_id,
+       'policy_number', $1.policy_number,
+       'insured_id', $1.insured_id,
+       'insured', CASE WHEN ($2->'insured' IS NULL OR $2->>'insured' != 'false') 
+                   THEN jso.corpus($1.insured_id) END,
+       'effective_date', $1.effective_date::date,
+       'expiry_date', $1.expiry_date::date,
+       'agent', jso.corpus($1.agent_id),
+       'insurance_company', jso.corpus($1.company_id),
+       'underwriter', jso.corpus($1.underwriter_id),
+       'branch', jso.corpus($1.branch_id),
+       'agency_office', jso.corpus($1.agency_office_id),
+       'deductible', jso.price($1.deductible),
+       'risks',
+       CASE WHEN ($2->>'risks' IS NOT NULL AND ($2->>'risks') != 'false')
+       THEN ((SELECT array_agg(jso.risk(risk, '{"policy": false}'))
+                FROM risk WHERE risk.policy_id = $1.policy_id))
+       END
+     ))
+  $function$
+	;
+CREATE OR REPLACE FUNCTION jso.risk(risk, _options json DEFAULT '{}'::json)
+ RETURNS json
+ LANGUAGE sql
+ STABLE
+AS $function$
+         SELECT --json_strip_nulls(
+        json_build_object(
+            'risk_id', $1.risk_id,
+            'risk_type', $1.risk_type_name,
+            'code', jso.risk_code($1.risk_code),
+--           - 'number', number
+            'policy', CASE WHEN (($2->>'policy' IS NULL)
+                                 OR ($2->>'policy' != 'false'))
+                                 THEN jso.policy($1.policy_id) END,
+            'contract', jso.contract($1.contract_id),
+            'claims',  (SELECT array_agg(c.claim_id)
+                          FROM (SELECT * FROM claim WHERE risk_id = $1.risk_id
+                                 ORDER BY claim_id) AS c)
+           )
+   --) ;
+        $function$
+	;
+CREATE OR REPLACE FUNCTION jso.risk_code(text, _options json DEFAULT '{}'::json)
+ RETURNS json
+ LANGUAGE sql
+ STABLE
+AS $function$
+   SELECT jso.risk_code(risk_code.*) FROM risk_code WHERE risk_code = $1 ;
+$function$
+	;
+CREATE OR REPLACE FUNCTION jso.risk_code(risk_code, _options json DEFAULT '{}'::json)
+ RETURNS json
+ LANGUAGE sql
+ STABLE
+AS $function$
+   SELECT json_strip_nulls(json_build_object(
+      'code', $1.risk_code,
+      'description', $1.description,
+      'first_year_of_account', $1.first_year_of_account, 
+      'last_year_of_account', $1.last_year_of_account, 
+      'terrorism_code', jso.risk_code($1.terrorism_code)
+     )) ;
+$function$
+	;
+CREATE OR REPLACE FUNCTION jso.timeline(claim)
+ RETURNS json
+ LANGUAGE sql
+ STABLE
+AS $function$
+   SELECT json_strip_nulls(
+     json_build_object(
+       'date_of_loss', $1.date_of_loss::date,
+       'open_date', $1.open_date::date,
+       'close_date', $1.close_date::date,
+       'reopen_date', $1.rev_date::date,
+       'claim_received', $1.claim_received_time,
+       'claim_acknowledged', $1.claim_acknowledged_time,
+       'insured_contacted', $1.insured_contacted_time,
+       'first_site_visit', $1.first_site_visit_time,
+       'recovery_subrogation', $1.recovery_subrogation_date,
+       'peer_reviewed', $1.peer_reviewed_date,
+       'over_authority', $1.over_authority 
+
+     ));
+   $function$
+	;
+CREATE OR REPLACE FUNCTION jso.transaction(claim_transaction)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+  SELECT json_strip_nulls(json_build_object(
+    'transaction_id', $1.transaction_id,
+    'claim_id', $1.claim_id,
+    'date', $1.transaction_date,
+    'type', $1.type,
+    'heading', $1.transaction_heading,
+    'amount', $1.amount::text,
+    'expense_type', $1.expense_type,
+    'cheque', jso.cheque($1),
+    'limit_of_cover', $1.limit_of_cover::text,
+    'approved', $1.approved
+ ))
+  $function$
+	;
+CREATE OR REPLACE FUNCTION jso.transaction_select_values()
+ RETURNS json
+ LANGUAGE sql
+ STABLE
+AS $function$
+  SELECT json_build_object(
+    'type', (SELECT array_agg(to_json(t))
+              FROM (SELECT claim_transaction_type_id AS id,
+                      description AS name
+                      FROM claim_transaction_type ORDER BY claim_transaction_type_id) t
+    ),
+    'heading', (SELECT array_agg(to_json(h))
+                  FROM (SELECT claim_transaction_heading_name  AS name,
+                               (claim_transaction_heading_name
+                                 = ANY (claim_transaction_indemnity_headings())
+                               ) AS indemnity
+                          FROM claim_transaction_heading) h
+    ),
+    'expense', (SELECT array_agg(to_json(r))
+                  FROM (SELECT claim_transaction_expense_type_name  AS name
+                          FROM claim_transaction_expense_type) r
+    )
+  );
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.claim_authority(claim)
+ RETURNS json
+ LANGUAGE sql
+AS $function$ 
+  SELECT pongo.json_strip_nulls(json_build_object(
+   '_type', 'claim_authority',
+   '_id', $1.claim_id,
+   'over_authority', claim_over_authority($1),
+   'over_authority_date', $1.over_authority::date, 
+   'contract_authority', jsi.price(contract_authority($1)),
+   'claim_authority', jsi.price(claim_authority($1))
+    ))
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.claim_crux(claim)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+     SELECT
+       pongo.json_strip_nulls(
+             json_build_object(
+      '_type', 'claim_crux',
+      '_id', $1.claim_id,
+      'status', $1.status,
+      'status_detail', jsi.claim_status_detail($1),
+      'label', $1.label,
+      'examiner', jsi.corpus_summary($1.adjuster_id),
+      'group', jsi.claim_group($1),
+      'lineage', $1.lineage,
+      'external_adjuster', jsi.corpus_summary($1.external_adjuster_id),
+      'claimant', jsi.corpus_summary($1.plaintiff_id),
+      'coverage_counsel', jsi.corpus_summary($1.coverage_counsel_id),
+      'line_of_business', $1.line_of_business,
+      'defense_counsel', jsi.corpus_summary($1.defense_counsel_id),
+      'restoration_firm_emergency', jsi.corpus_summary($1.restoration_firm_emergency_id),
+      'restoration_firm_repair', jsi.corpus_summary($1.restoration_firm_repair_id),
+      'industry', (SELECT to_json(ibc_code.*)
+                   FROM claim_ibc_code AS cic RIGHT JOIN ibc_code USING (industry)
+                   WHERE  cic.claim_id = $1.claim_id),
+      'coverage', $1.coverage,
+      'date_of_loss', $1.date_of_loss::date,
+      'balance', jsi.claim_balance($1),
+
+      'risk', jsi.risk_crux($1.risk_id),
+      'cause', jsi.claim_cause($1),
+      'loss', jsi.loss($1),
+      'authority', jsi.claim_authority($1),
+      'subscription_percent', $1.subscription_percent,
+      'outstanding_diary',  (SELECT json_agg(jsi.diary_entry(diary_entry)) FROM diary_entry
+                              WHERE claim_id = $1.claim_id
+                              AND diary_entry_is_outstanding(diary_entry)),
+      'transactions', (SELECT json_agg(t.t)
+                       FROM
+                        (SELECT jsi.transaction(t) AS t
+                         FROM claim_transaction AS t
+                         WHERE t.claim_id = $1.claim_id
+                         ORDER BY t.transaction_date, t.transaction_id) AS t),
+      'attachments', (SELECT json_agg(a.a)
+                       FROM
+                        (SELECT jsi.claim_attachment(a) AS a
+                         FROM attachment AS a
+                         WHERE a.claim_id = $1.claim_id
+                         ORDER BY a.date, a.attachment_id) AS a),
+      'diary', (SELECT jsi.claim_diary($1.claim_id)),
+      'timelog', (SELECT jsi.claim_timelog($1.claim_id))
+     ))
+
+   $function$
+	;
+CREATE OR REPLACE FUNCTION jsi.claim_status_detail(claim)
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+       SELECT pongo.json_strip_nulls(
+  	json_build_object(
+  	  '_type', 'claim_status_detail',
+  	  '_id', $1.claim_id,
+  	  'status', $1.status,
+  	   'label', $1.label,
+  	  'update', (select update FROM claim_update WHERE claim_id = $1.claim_id),
+  	  'open_date', $1.open_date::date,
+  	  'date_claim_made', $1.date_claim_made::date,
+  	  'close_date', $1.close_date::date,
+  	  'reopen_date', $1.rev_date::date,
+  	  'claim_received_time', $1.claim_received_time,
+  	  'claim_acknowledged_time', $1.claim_acknowledged_time,
+  	  'insured_contacted_time', $1.insured_contacted_time,
+  	  'first_site_visit_time', $1.first_site_visit_time,
+  	  'denial', $1.denial,
+  	  'date_of_denial', $1.date_of_denial,
+  	  'reason_for_denial', $1.reason_for_denial,
+            'complaint', $1.complaint,
+  	  'refer_to_underwriters', $1.refer_to_underwriters,
+  	  'open_for_recovery', CASE WHEN ($1.open_for_recovery)
+  				       THEN true
+        ELSE null
+  				  END,
+  	  'recovery_subrogation_date', $1.recovery_subrogation_date::date,
+  	  'peer_reviewed', CASE WHEN ($1.peer_reviewed_date IS NOT NULL)
+  				       THEN true
+        ELSE null
+  				  END,
+  	  'peer_reviewed_date', $1.peer_reviewed_date::date
+
+  	));
+       $function$
+	;
+CREATE OR REPLACE FUNCTION jsi.diary_schedule_numbers(app_user DEFAULT current_app_user())
+ RETURNS json
+ LANGUAGE sql
+AS $function$
+  WITH deadline AS (
+    SELECT diary_entry_id, 
+     GREATEST(action_date, MAX(defer_date)) AS deadline
+    FROM diary_entry
+    LEFT JOIN defer_diary_entry
+    USING (diary_entry_id)
+    WHERE app_user_id = $1.app_user_id
+    AND NOT processed GROUP BY diary_entry_id)
+
+ SELECT json_build_object (
+   '_type', 'diary-schedule-numbers', 
+   '_id', $1.app_user_id,
+   'user', jsi.user_summary($1),
+   'total', (SELECT count(*) FROM deadline),
+   'overdue', (SELECT count(*) FROM deadline WHERE deadline < now()::date),
+   'today', (SELECT count(*) FROM deadline WHERE deadline = now()::date),
+   'tomorrow', (SELECT count(*) FROM deadline WHERE deadline = now()::date + INTERVAL '1 day'), 
+   'one_week', (SELECT count(*) FROM deadline WHERE 
+               deadline > now()::date + INTERVAL '1 day' 
+               AND deadline <= now()::date + INTERVAL '1 day' + INTERVAL '1 week'), 
+   'future', (SELECT count(*) FROM deadline WHERE 
+               deadline >  now()::date + INTERVAL '1 day' + INTERVAL '1 week')
+)
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.loss(claim)
+ RETURNS json
+ LANGUAGE sql
+AS $function$ 
+  SELECT pongo.json_strip_nulls(json_build_object(
+   'date', $1.date_of_loss::date, 
+   'description', detail_text,
+   'loss_code', jsi.loss_code(claim_detail_id),
+   'location', jsi.loss_location($1),
+   'catastrophe', jsi.loss_catastrophe($1)))
+  FROM claim_claim_detail 
+  WHERE claim_id = $1.claim_id
+$function$
+	;
+CREATE OR REPLACE FUNCTION jsi.loss_location(claim)
+ RETURNS json
+ LANGUAGE sql
+AS $function$ 
+  SELECT pongo.json_strip_nulls(json_build_object(
+   'address_line_1', (SELECT value FROM loss_detail 
+                      WHERE claim_id = $1.claim_id 
+                      AND key = 'Loss Location' 
+                      LIMIT 1),
+   'address_line_2', (SELECT value FROM loss_detail 
+                      WHERE claim_id = $1.claim_id 
+                      AND key = 'Loss Location #2' 
+                      LIMIT 1), 
+   'city', (SELECT value FROM loss_detail 
+                      WHERE claim_id = $1.claim_id 
+                      AND key = 'Loss City' 
+                      LIMIT 1),
+   'province', (SELECT value FROM loss_detail 
+                      WHERE claim_id = $1.claim_id 
+                      AND key = 'Loss Province' 
+                      LIMIT 1),
+   'country', (SELECT value FROM loss_detail 
+                      WHERE claim_id = $1.claim_id 
+                      AND key = 'Loss Country' 
+                      LIMIT 1),
+   'postal_code', (SELECT value FROM loss_detail 
+                      WHERE claim_id = $1.claim_id 
+                      AND key = 'Loss Postal Code' 
+                      LIMIT 1)
+    ))
+$function$
+	;
+#+end_src
+
+
+
+* ~ecm_to_json(anyelement, options)~: The easy way out
+
+#+begin_src sql
+CREATE OR REPLACE FUNCTION ecm_to_json (anyelement, JSON default NULL::JSON)
+ RETURNS json LANGUAGE SQL AS $$
+  SELECT to_json($1);
+$$;
+#+end_src
+
+
+* Misc
+#+PROPERTY: header-args:sql :engine postgres :cmdline "\"host=ecm.maxwellclaims.net port=5432 user=maxclaims dbname=maxclaims\""
+#+begin_src sql
+create function jsonb_row_defaults(
+  p_table   text,
+  p_schema  text DEFAULT 'public'
+) returns jsonb
+as $$
+declare
+  t_defaults  jsonb;
+  t_value     jsonb;
+  t_column    text;
+  t_default   text;
+begin
+  t_defaults := '{}'::jsonb;
+
+  for t_column, t_default in
+    select column_name, column_default
+    from information_schema.columns
+    where
+      table_schema=p_schema and
+      table_name=p_table
+  loop
+    if t_default is not null then
+      execute 'select to_jsonb(' || t_default || ')' into t_value;
+      t_defaults := jsonb_set(t_defaults, array[t_column], t_value);
+    end if;
+  end loop;
+
+  return t_defaults;
+end;
+$$ language plpgsql;
+#+end_src
+
+#+RESULTS:
+| CREATE FUNCTION |
+|-----------------|

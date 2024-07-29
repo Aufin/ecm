@@ -1,0 +1,402 @@
+#+TITLE: Raw Database Thingies
+
+#+PROPERTY: header-args:sql :engine postgres :cmdline "\"sslmode=disable host=db.ecm.lan user=maxclaims port=5432 dbname=maxclaims\""
+
+* Remove Clients/connections
+
+There are still hanging connections.
+
+
+  #+begin_quote
+  pg_stat_activity is a PostgreSQL system view that stores a row for
+  each process running on the DBMS server. In detail, it contains
+  useful information about the current activity of each process.
+  
+  https://www.dbvis.com/thetable/how-to-kill-all-connections-to-a-database-in-postgresql/
+  #+end_quote
+
+  #+begin_src sql
+    --SELECT count(*) FROM pg_stat_activity;
+    SELECT pg_terminate_backend(pid), leader_pid FROM pg_stat_activity
+    WHERE state = 'idle in transaction' AND query_start < now() - INTERVAL '1 hour'
+    AND leader_pid IS NULL
+
+   -- ORDER BY query_start LIMIT 5;
+  #+end_src
+
+  #+RESULTS:
+  | pg_terminate_backend | leader_pid |
+  |----------------------+------------|
+
+#+begin_src sql
+  \d pg_stat_activity
+#+end_src
+
+#+RESULTS:
+| View "pg_catalog.pg_stat_activity" |                          |           |          |         |
+|------------------------------------+--------------------------+-----------+----------+---------|
+| Column                             | Type                     | Collation | Nullable | Default |
+| datid                              | oid                      |           |          |         |
+| datname                            | name                     |           |          |         |
+| pid                                | integer                  |           |          |         |
+| leader_pid                         | integer                  |           |          |         |
+| usesysid                           | oid                      |           |          |         |
+| usename                            | name                     |           |          |         |
+| application_name                   | text                     |           |          |         |
+| client_addr                        | inet                     |           |          |         |
+| client_hostname                    | text                     |           |          |         |
+| client_port                        | integer                  |           |          |         |
+| backend_start                      | timestamp with time zone |           |          |         |
+| xact_start                         | timestamp with time zone |           |          |         |
+| query_start                        | timestamp with time zone |           |          |         |
+| state_change                       | timestamp with time zone |           |          |         |
+| wait_event_type                    | text                     |           |          |         |
+| wait_event                         | text                     |           |          |         |
+| state                              | text                     |           |          |         |
+| backend_xid                        | xid                      |           |          |         |
+| backend_xmin                       | xid                      |           |          |         |
+| query_id                           | bigint                   |           |          |         |
+| query                              | text                     |           |          |         |
+| backend_type                       | text                     |           |          |         |
+
+#+begin_src 
+#+end_src
+
+* Load external CSV file
+#+begin_src sql
+    SELECT 'w5';
+#+end_src
+
+#+RESULTS:
+| ?column? |
+|----------|
+| f        |
+
+#+begin_src sql
+  CREATE OR REPLACE FUNCTION load_csv_file(
+       target_table text,
+       csv_path text,
+       col_count integer)
+     RETURNS void AS
+   $BODY$
+
+   declare
+
+   iter integer; -- dummy integer to iterate columns with
+   col text; -- variable to keep the column name at each iteration
+   col_first text; -- first column name, e.g., top left corner on a csv file or spreadsheet
+
+   begin
+       set schema 'public';
+
+       create table temp_table ();
+
+       -- add just enough number of columns
+       for iter in 1..col_count
+       loop
+           execute format('alter table temp_table add column col_%s text;', iter);
+       end loop;
+
+       -- copy the data from csv file
+       execute format('copy temp_table from %L with delimiter '','' quote ''"'' csv ', csv_path);
+
+       iter := 1;
+       col_first := (select col_1 from temp_table limit 1);
+
+       CREATE TABLE temp_cols AS (SELECT * FROM temp_table LIMIT 1);
+       -- update the column names based on the first row which has the column names
+      -- for col in execute format('select unnest(string_to_array(trim(temp_table::text, ''()''), '','')) from temp_table where col_1 = %L', col_first)
+      -- loop
+      --    col := regexp_replace(col, '[^\w]+','','g');
+       --    execute format('alter table temp_table rename column col_%s to %I', iter, col);
+       --    iter := iter + 1;
+      -- end loop;
+
+       -- delete the columns row
+    --   IF (col_first  ~ '[/^ *$/]') THEN
+    --      execute format('delete from temp_table where "%s" = %L', col_first, col_first);
+     --     ELSE
+     --     execute format('delete from temp_table where %s = %L', col_first, col_first);
+     --     END IF;
+
+       -- change the temp table name to the name given as parameter, if not blank
+       if length(target_table) > 0 then
+           execute format('alter table temp_table rename to %I', target_table);
+       end if;
+
+   end;
+
+   $BODY$
+     LANGUAGE plpgsql VOLATILE
+     COST 100;
+
+   ALTER FUNCTION load_csv_file(text, text, integer)
+     OWNER TO postgres;
+#+end_src
+
+#+RESULTS:
+| CREATE FUNCTION |
+|-----------------|
+| ALTER FUNCTION  |
+
+#+begin_src sh
+
+#+end_src
+* Duplication
+
+#+begin_src sql
+  \d merged_person
+#+end_src
+
+#+RESULTS:
+| Table "public.merged_person" |                             |           |          |         |
+|------------------------------+-----------------------------+-----------+----------+---------|
+| Column                       | Type                        | Collation | Nullable | Default |
+| person_id                    | integer                     |           |          |         |
+| parent_person_id             | integer                     |           |          |         |
+| first_name                   | text                        |           |          |         |
+| last_name                    | text                        |           |          |         |
+| company_name                 | text                        |           |          |         |
+| address1                     | text                        |           |          |         |
+| address2                     | text                        |           |          |         |
+| city                         | text                        |           |          |         |
+| province_state_id            | integer                     |           |          |         |
+| postal_zip_code              | text                        |           |          |         |
+| home_phone                   | text                        |           |          |         |
+| work_phone                   | text                        |           |          |         |
+| fax_phone                    | text                        |           |          |         |
+| cell_phone                   | text                        |           |          |         |
+| email_address                | text                        |           |          |         |
+| birth_date                   | timestamp without time zone |           |          |         |
+| date_added                   | timestamp without time zone |           |          |         |
+| date_modified                | timestamp without time zone |           |          |         |
+| company_flag                 | integer                     |           |          |         |
+| user_id                      | text                        |           |          |         |
+| user_password                | text                        |           |          |         |
+| postal_code                  | text                        |           |          |         |
+| middle_name                  | text                        |           |          |         |
+| title                        | text                        |           |          |         |
+| suffix                       | text                        |           |          |         |
+
+#+begin_src sql
+     CREATE OR REPLACE FUNCTION public.merge_persons(master integer, VARIADIC dups integer[])
+     RETURNS boolean
+     LANGUAGE plpgsql
+      AS $function$
+     BEGIN
+       UPDATE claim SET coverage_counsel_id = $1 WHERE coverage_counsel_id = ANY($2);
+       UPDATE claim SET defense_counsel_id = $1 WHERE defense_counsel_id = ANY($2);
+       UPDATE claim SET external_adjuster_id = $1 WHERE external_adjuster_id = ANY($2);
+       UPDATE claim SET adjuster_id = $1 WHERE adjuster_id = ANY($2);
+       UPDATE claim SET plaintiff_id = $1 WHERE plaintiff_id = ANY($2);
+       UPDATE claim SET restoration_firm_emergency_id = $1 WHERE restoration_firm_emergency_id = ANY($2);
+       UPDATE claim SET restoration_firm_repair_id = $1 WHERE restoration_firm_repair_id = ANY($2);
+       UPDATE claim SET restoration_firm_id = $1 WHERE restoration_firm_id = ANY($2);
+       UPDATE claim SET adjuster_office_id  = $1 WHERE adjuster_office_id = ANY($2);
+
+
+       UPDATE app_user SET person_id = $1 WHERE person_id = ANY($2);
+
+       UPDATE policy SET agent_id = $1 WHERE agent_id = ANY($2);
+       UPDATE policy SET branch_id = $1 WHERE branch_id = ANY($2);
+       UPDATE policy SET agency_office_id = $1 WHERE agency_office_id = ANY($2);
+       UPDATE policy SET company_id = $1 WHERE company_id = ANY($2);
+       UPDATE policy SET insured_id = $1 WHERE insured_id = ANY($2);
+       UPDATE policy SET underwriter_id = $1 WHERE underwriter_id = ANY($2);
+
+
+       UPDATE contract SET agency_id = $1 WHERE agency_id = ANY($2);
+       UPDATE contract SET syndicate_id = $1 WHERE syndicate_id = ANY($2);
+       UPDATE contract SET insurance_company_id = $1 WHERE insurance_company_id = ANY($2);
+       UPDATE contract SET london_broker_id = $1 WHERE london_broker_id = ANY($2);
+       UPDATE claim_transaction SET payee_id = $1 WhERE payee_id = ANY($2);
+       UPDATE claim_transaction SET recipient_id = $1 WhERE recipient_id = ANY($2);
+
+       DELETE FROM app_user_agency
+        WHERE (SELECT TRUE FROM app_user_agency WHERE agency_id = $1 LIMIT 1)
+              IS NOT NULL
+          AND agency_id = ANY($2);
+       UPDATE app_user_agency SET agency_id = $1 WHERE agency_id = ANY($2);
+
+
+       INSERT INTO merged_person (SELECT * FROM person WHERE person_id = ANY($2));
+       INSERT INTO merged_person_parent AS mpp (person_id, merged)
+          VALUES ($1, $2) ON CONFLICT (person_id) DO UPDATE SET merged = mpp.merged || EXCLUDED.merged;
+       
+       DELETE FROM person WHERE person_id = ANY($2);
+     RETURN TRUE;
+      END;
+    $function$;
+
+    --  COPY (
+    -- BEGIN;  DROP TABLE duperson;
+    --         CREATE TABLE duperson AS (
+
+    --           SELECT second.person_id AS keep, person_name(second.person_id) keep_name,
+    --                  first.person_id AS merge, person_name(first.person_id) AS merge_name
+    -- 	    FROM person first LEFT JOIN person second
+    -- 	    ON (first.person_id != second.person_id
+    -- 	       AND word_similarity(person_name(first.person_id),  person_name(second.person_id)) = 1)
+    --            WHERE person_name(first.person_id) != '' AND first.person_id IS NOT NULL AND second.person_id IS NOT NULL
+    --            -- AND similarity(person_name(first.person_id),  person_name(second.person_id)) > 0.5
+
+    --          LIMIT ALL
+    --     --STEP 1: Exact Matches	
+    --     --     SELECT array_length(people, 1) AS "number", short_name AS name, people[1] AS keep, people[2:] AS merge
+    --     --         FROM (SELECT short_name, array_agg(person_id) AS people
+    --     --            FROM (SELECT person_name(person) AS short_name, person_id FROM person
+    --     --                   WHERE person_short_name(person) NOT LIKE 'Alex Mahary%' ORDER BY person_id)
+    --     --         GROUP BY short_name HAVING count(person_id) > 1) dups ORDER BY short_name, number LIMIT 500
+
+
+    --     --
+    --     );
+
+    --     ALTER TABLE claim DISABLE TRIGGER claim_fits_policy_term;
+    --     ALTER TABLE policy DISABLE TRIGGER ALL;
+    --     ALTER TABLE contract DISABLE TRIGGER ALL;
+    --     ALTER TABLE app_user DISABLE TRIGGER ALL;
+    --     ALTER TABLE claim_transaction DISABLE TRIGGER ALL;
+    --     ALTER TABLE policy ENABLE TRIGGER hstore_row_history;
+    --     ALTER TABLE contract ENABLE TRIGGER hstore_row_history;
+    --     ALTER TABLE claim ENABLE TRIGGER hstore_row_history;
+    --     ALTER TABLE contract ENABLE TRIGGER hstore_row_history;
+
+    --    -- CREATE TABLE second_duperson AS (SELECT * FROM duperson
+    --    --  WHERE (length(keep_name) - length(merge_name)) <= 2) ;
+
+    --    -- SELECT * FROM second_duperson;
+
+    --     -- COPY (SELECT merge_persons(keep, VARIADIC merge), * FROM duperson) TO '/tmp/first_merge.csv' DELIMITER ',' CSV HEADER;
+
+    --     ALTER TABLE claim ENABLE TRIGGER ALL;
+    --     ALTER TABLE contract ENABLE TRIGGER ALL;
+    --     ALTER TABLE app_user ENABLE TRIGGER ALL;
+    --     ALTER TABLE claim_transaction ENABLE TRIGGER ALL;
+    --     ALTER TABLE policy ENABLE TRIGGER ALL;
+    --   COMMIT;
+
+    --     -- TO '/tmp/duplicates.csv'
+    --       --       DELIMITER ',' CSV HEADER;
+
+#+end_src
+
+#+RESULTS:
+| CREATE FUNCTION |
+|-----------------|
+ 
+#+begin_src sql
+  SELECT * FROM du_person_prefix LIMIT 1;
+#+end_src
+#+RESULTS:
+|---|
+
+#+begin_src sql
+     CREATE OR REPLACE VIEW du_person_prefix_grades AS  SELECT trim(regexp_replace(keep_name, '\s+', ' ', 'g')) AS final_keeper,  similarity(keep_name, merge_name), length(keep_name) - length(merge_na
+  me) letter_diff, * FROM du_person_prefix;
+  CREATE VIEW du_full AS SELECT * FROM du_person_prefix_grades WHERE similarity = 1 AND letter_diff <= 3;  
+#+end_src
+#+begin_src sql
+  SELECT ((count(*) * 4) / 60) / 60 FROM person
+#+end_src
+
+#+RESULTS:
+| ?column? |
+|----------|
+|       76 |
+
+#+begin_src sql
+   CREATE VIEW du_full_merge AS (SELECT final_keeper, keep, array_agg(merge) FROM (SELECT DISTINCT * FROM
+     (SELECT final_keeper, keep, UNNEST(mergers) AS merge
+      FROM 
+      (SELECT final_keeper, keep, array_append(this_merge || rest_merge || rest_keep, keep) AS mergers
+       FROM (SELECT this.final_keeper, this.keep, array_agg(this.merge) as this_merge ,
+                     array_agg(rest.merge) AS rest_merge, array_agg(rest.keep) AS rest_keep
+             FROM du_full this LEFT JOIN du_full rest ON ((this.keep = rest.keep AND this.merge != rest.merge)
+                                                           OR this.keep = rest.merge)
+             GROUP BY this.final_keeper, this.keep)
+     ORDER BY keep))
+  WHERE keep < merge)
+  GROUP BY final_keeper, keep);
+#+end_src
+
+#+begin_src sql
+     CREATE VIEW du_final_full_merge AS (SELECT d.final_keeper, d.keep, d.array_agg AS mergers,
+      (SELECT array_agg(person_name(id)) FROM UNNEST(d.array_agg) id) FROM du_full_merge d LEFT JOIN du_full_merge n ON (d.keep = ANY(n.array_agg))
+     WHERE n.keep IS NULL ORDER BY d.keep);
+#+end_src
+#+begin_src sql
+    
+  COPY (SELECT * FROM du_final_full_merge ORDER BY keep) TO '/tmp/full_match_merge.csv' DELIMITER ',' CSV HEADER;
+#+end_src
+
+#+begin_src sql
+  BEGIN;
+  ALTER TABLE person DISABLE TRIGGER ALL;
+  SELECT person_name(person_id) FROM person ORDER BY person_id DESC LIMIT 10; 
+  UPDATE person SET first_name = trim(regexp_replace(first_name, '\s+', ' ', 'g')),
+                           middle_name = trim(regexp_replace(middle_name, '\s+', ' ', 'g')),
+                           last_name = trim(regexp_replace(last_name, '\s+', ' ', 'g')),
+                           company_name = trim(regexp_replace(company_name, '\s+', ' ', 'g'));
+  SELECT person_name(person_id) FROM person ORDER BY person_id DESC LIMIT 10; 
+  ABORT;
+
+#+end_src
+#+RESULTS:
+| BEGIN                                                                                                                             |
+|-----------------------------------------------------------------------------------------------------------------------------------|
+| ALTER TABLE                                                                                                                       |
+| person_name                                                                                                                       |
+| The Owners of Strata Plan EPS7850                                                                                                 |
+| Transport Prestige s.e.n.c                                                                                                        |
+| Stephanie Assmann                                                                                                                 |
+| Austin Huang                                                                                                                      |
+| KW Custom Kitchens & Cabinets                                                                                                     |
+| Please forward payments for Wawanesa: Sedgwick Canada Inc. - Suite 304 – 9440 202nd Street, Langley, BC V1M 4A6 – via Canada Post |
+| Wawanesa Mutual Insurance                                                                                                         |
+| Patricia Davis Crawford & Company                                                                                                 |
+| Dolden Wallace Folick LLP                                                                                                         |
+| Rochelle Garden- ClaimsPro                                                                                                        |
+
+* Postgresql Configuration
+
+** =pg_hba.conf= : Access Control
+
+Note that we trust no ssl connections from hosts local because users
+have roles and this is easier than =SET='ing them.
+
+
+
+#+begin_src conf :tangle ./etc/postgresql/12/main/pg_hba.conf
+  # Database administrative login by Unix domain socket
+  local   all             postgres                                peer
+
+  # TYPE  DATABASE        USER            ADDRESS                 METHOD
+
+  # "local" is for Unix domain socket connections only
+  local   all             all                                     peer
+  # IPv4 local connections:
+  hostssl    all             all             127.0.0.1/32            md5
+  hostnossl   all		all		127.0.0.1/32 trust
+  # IPv6 local connections:
+  host    all             all             ::1/128                 md5
+
+  hostssl    all       all   0.0.0.0/0    cert map=cert
+
+  # The cloud server(s2
+  hostnossl   all		all		10.42.0.12/32 trust
+
+  hostssl            all       all  71.19.249.26/32    cert map=cert
+  hostnossl            all       all  71.19.249.26/32  reject
+
+  host    all             all             76.73.96.2/32            md5
+  host    all             all             50.7.166.0/0            md5
+  host    all             all             174.7.132.154/32            md5
+
+  host    replication     all             174.7.128.78/32        md5
+  host    replication     all             174.114.179.56/32        md5
+  host    replication     all             0.0.0.0/0        md5
+
+  host replication all 172.31.18.123/32 md5
+  host replication all 54.201.97.242/32 md5
+#+end_src

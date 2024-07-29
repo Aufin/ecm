@@ -1,0 +1,179 @@
+#+TITLE: Examiners! The main use of ECM
+
+#+PROPERTY: header-args:sql :engine postgres :cmdline "\"host=maxbakuntu.lan port=5432 user=maxclaims dbname=maxclaims\""
+#+begin_src sql
+      --DROP TABLE examiner_record;
+      --CREATE TABLE IF NOT EXISTS examiner_record (
+      -- examiner_id INTEGER PRIMARY KEY REFERENCES person(person_id),
+      -- active BOOLEAN NOT NULL DEFAULT false
+     -- );
+
+      DROP VIEW IF EXISTS examiner;
+      CREATE OR REPLACE VIEW examiner AS
+       SELECT COALESCE(aa.person_id, examiner_id) AS examiner_id,
+              app_user_id AS user_id, name, total_claims, open_claims,
+              COALESCE(aa.active, false) AS active
+        FROM (SELECT adjuster_id AS examiner_id, short_name AS name,
+              count(claim_id) AS total_claims,
+              count(claim_id) FILTER (WHERE status = 'Open')
+                AS open_claims
+             FROM person RIGHT JOIN claim ON (person_id = adjuster_id)
+             GROUP BY adjuster_id, short_name) ex
+        LEFT JOIN app_adjuster aa ON (examiner_id = aa.person_id)
+        LEFT JOIN app_user au ON (au.person_id = aa.person_id);
+
+     CREATE OR REPLACE FUNCTION examiner_update()
+     RETURNS TRIGGER LANGUAGE PLPGSQL AS $$
+     BEGIN
+     IF (NEW.active != OLD.active) THEN
+      UPDATE app_adjuster aa
+          SET aa.active = NEW.active WHERE aa.person_id = NEW.examiner_id;
+     END IF;
+     END;
+     $$;
+
+     CREATE OR REPLACE TRIGGER examiner_update
+     INSTEAD OF UPDATE ON examiner
+     FOR EACH ROW EXECUTE FUNCTION examiner_update();
+
+#+end_src
+
+#+RESULTS:
+| DROP VIEW       |
+|-----------------|
+| CREATE VIEW     |
+| CREATE FUNCTION |
+| CREATE TRIGGER  |
+
+#+begin_src sql
+  SELECT * FROM examiner;
+#+end_src
+
+
+#+RESULTS:
+| examiner_id | user_id | name                                         | total_claims | open_claims | active |
+|-------------+---------+----------------------------------------------+--------------+-------------+--------|
+|             |         |                                              |          186 |           0 | f      |
+|       71595 |     799 | Stephanie Wood                               |          445 |         263 | t      |
+|       21088 |     108 | Marc Dubois                                  |         1372 |           0 | t      |
+|       51621 |     579 | Marisa Giammaria                             |           12 |           0 | t      |
+|       71111 |     797 | Abigail Sy                                   |          522 |         193 | t      |
+|       44688 |     508 | Louise Gray                                  |          287 |           0 | t      |
+|       27246 |     202 | Sylvie Deshaies                              |          213 |           0 | t      |
+|       20940 |         | INVALID ADJUSTER                             |          838 |           0 | f      |
+|       20215 |       6 | Ian Maxwell                                  |          412 |           0 | t      |
+|       20794 |         | Scott Misirlis                               |          325 |           0 | f      |
+|       10355 |         | Kirstyn Ward                                 |            2 |           0 | f      |
+|       59353 |     685 | Brenda Brideau                               |          410 |         184 | t      |
+|       35991 |     418 | Suman Sandhu                                 |          141 |           0 | t      |
+|       60582 |     695 | Ron Burke                                    |          619 |         233 | t      |
+|       37594 |     424 | Mounira Klein                                |         2463 |           0 | t      |
+|       40836 |     459 | Smita Patel                                  |           49 |           0 | t      |
+|        6909 |         | Daniels & Associates Insurance Adjusters Inc |            1 |           0 | f      |
+|       13455 |         | Brent Bryde                                  |         1393 |           0 | f      |
+|       24794 |         | Meagan DaSilva                               |           41 |           0 | f      |
+|        8540 |       1 | Crampsie                                     |            6 |           1 | t      |
+|       12310 |         | Rick White                                   |           19 |           0 | f      |
+|       14307 |      59 | Steve Warren                                 |         1456 |           0 | t      |
+|       14279 |      39 | Eldred Vivian                                |         2206 |           0 | t      |
+|       18048 |         | Stephen Ward                                 |           11 |           0 | f      |
+|       38665 |     430 | Laura O'Hearn                                |         1473 |           1 | t      |
+|       14451 |         | margaret hubble                              |            2 |           0 | f      |
+|       40837 |     460 | Sharleen Gounder                             |         1041 |           0 | t      |
+|        3748 |         | Dave Doolittles                              |            1 |           0 | f      |
+|       65499 |     754 | Maggie Domiter                               |          699 |         196 | t      |
+|       76158 |     838 | Hailey Surgin                                |          156 |         140 | t      |
+|       72119 |     805 | Sue Cormier                                  |          272 |         103 | t      |
+|       42887 |     479 | Christine Grant                              |          673 |           0 | t      |
+|       33004 |     388 | Rupi Cheema                                  |           10 |           0 | t      |
+|       13395 |       3 | Jean Michel Reysset                          |         7149 |           0 | t      |
+|       54108 |     627 | Susan Kirkwood                               |          102 |           0 | t      |
+|       76492 |     840 | Pierre-Marc Laurin                           |           95 |          93 | t      |
+|        1425 |         | Maxwell Claims Service                       |          328 |           0 | f      |
+|       23009 |     147 | Ami Carter                                   |          200 |           0 | t      |
+|       15970 |         | Aht Khuensang                                |           61 |           0 | f      |
+|        4134 |         | Barry Slocombe                               |          261 |           0 | f      |
+|       68240 |     778 | Jamie Sodergard                              |            1 |           1 | t      |
+|       70473 |     792 | Tracy Acheson                                |          387 |         197 | t      |
+|       76305 |     839 | Elaine Siddons                               |            1 |           0 | t      |
+|       43158 |     483 | Micheline Chagnon                            |          429 |           0 | t      |
+|       24980 |     702 | Test Adjuster                                |          209 |           0 | t      |
+|        1003 |         | Tracy Hon                                    |         2474 |           0 | f      |
+|       48080 |     543 | Beth Thorne                                  |           29 |           0 | t      |
+|       31609 |     350 | Troy Ferrajohn                               |         2704 |         285 | t      |
+|       11169 |       2 | Trisha Loscombe                              |         3637 |         101 | t      |
+|        3432 |         | Maxwell Claims Services Inc.                 |            1 |           0 | f      |
+|       27587 |     208 | David Cremin                                 |          400 |           0 | t      |
+|       41929 |     469 | Serge Racine                                 |          225 |           0 | t      |
+|       13267 |         | test                                         |            1 |           0 | f      |
+|       45148 |     521 | Carrie Grayson                               |          196 |           0 | t      |
+|       68241 |     779 | Keira Wilding                                |          812 |         249 | t      |
+|       13772 |      66 | Garry Daniels                                |          710 |           1 | t      |
+|       40408 |     457 | Ron Montelpare                               |          389 |           0 | t      |
+|       70948 |     795 | Nicholas VanRootselaar                       |          144 |          18 | t      |
+|        9578 |         | Ian Gurnell                                  |            9 |           0 | f      |
+|       30129 |     336 | Jeremy Yip                                   |         1413 |           0 | t      |
+|       67357 |     775 | Nicole Landry                                |            1 |           1 | t      |
+|       69804 |     789 | Christie Belok-Bunn                          |          142 |           0 | t      |
+|       39186 |     444 | Carly Winterhalt                             |         1378 |           0 | t      |
+|       73959 |     821 | Dominic Fuizzotto                            |          346 |         214 | t      |
+|       16399 |         | Valerie Pritchard                            |         3307 |           0 | f      |
+|       18600 |       5 | Marion Maxwell                               |         2960 |           0 | t      |
+|       70947 |     794 | Marcel Michaud                               |          191 |         150 | t      |
+|       47096 |     538 | Tracey Cole                                  |          435 |           0 | t      |
+|       51290 |     576 | Sarah Newman                                 |            1 |           0 | t      |
+|       30624 |     338 | Joy Banks                                    |         1115 |           0 | t      |
+|       21412 |         | Cory Feng                                    |          332 |           0 | f      |
+|       10885 |         | Marie Ryder                                  |            6 |           0 | f      |
+|       13364 |         | Reysset                                      |            2 |           0 | f      |
+|       30977 |     343 | Matt Caruso                                  |         1092 |           0 | t      |
+|       66569 |     765 | Stephen LeBlanc                              |          423 |         256 | t      |
+|       10354 |         | Kristyn Ward                                 |           72 |           0 | f      |
+|       13678 |         | Aht Khuensang                                |          224 |           0 | f      |
+|       33341 |     392 | Beth Trisko                                  |          283 |           0 | t      |
+|       48647 |     546 | Paula Pereira                                |          700 |         153 | t      |
+|       24993 |         | April Montreal                               |           34 |           0 | t      |
+|       34376 |     417 | Ronni Bateman                                |         4014 |         358 | t      |
+|       65858 |     759 | Bev Sibbert                                  |            1 |           1 | t      |
+|       16373 |         | Timothy So                                   |            1 |           0 | f      |
+|       15179 |         | Stephen Ward                                 |         1798 |           0 | f      |
+|       62309 |     703 | Anna Le Good                                 |            1 |           0 | t      |
+|       26842 |     198 | Fran Osen                                    |          296 |           0 | t      |
+|       22005 |         | Ed Forrester                                 |          199 |           0 | f      |
+|       16640 |         | Lynne Camp                                   |            4 |           0 | f      |
+|       25075 |         | Jan Singh                                    |          156 |           0 | f      |
+|        2887 |         | Demers and Zajac and Vena Inc.               |            6 |           0 | f      |
+|       39188 |     445 | Kristy Valido                                |            1 |           1 | t      |
+|       16222 |         | expertise courval                            |            1 |           0 | f      |
+|       72652 |     814 | Sandra Harkaway-Power                        |          277 |         235 | t      |
+|       26321 |     194 | Cindy Locke                                  |         2210 |         399 | t      |
+|        1853 |         | Dave Clark                                   |          584 |           0 | f      |
+|       27247 |     203 | Nazish Mirza                                 |          747 |           0 | t      |
+|        4291 |         | Cameron McLeod                               |            3 |           0 | f      |
+|       51524 |     578 | Daniel Varga                                 |          931 |         247 | t      |
+|       60638 |     696 | Meagan Devlin                                |            1 |           0 | t      |
+|       61682 |         |                                              |           20 |           0 | f      |
+|       25582 |     182 | Twila McInnis                                |         1044 |           0 | t      |
+|        4231 |         | Marion and Daniel Van Zanten                 |            1 |           0 | f      |
+|       22574 |         | Aht Khuensang                                |           29 |           0 | f      |
+|       16228 |         | bourdon & juteau                             |            3 |           0 | f      |
+|       16163 |         | Tracy Hon                                    |          111 |           0 | f      |
+|        9575 |         | Mike Glowinski                               |           41 |           0 | f      |
+|        2446 |         | Margaret Hubble                              |         1037 |           0 | f      |
+|       24923 |         | Howie Leung                                  |           45 |           0 | f      |
+|       16305 |         | Timothy So                                   |            2 |           0 | f      |
+|       38359 |     427 | Marc Faddoul                                 |          396 |           0 | t      |
+|          19 |         | System Administrator                         |          176 |           0 | f      |
+|       49081 |     547 | Rosie Zambito                                |           79 |           0 | t      |
+|       15865 |         | Timothy So                                   |            2 |           0 | f      |
+|       76803 |     862 | Chontelle Tuck                               |          106 |          99 | t      |
+|       14436 |         | Stephen Ward                                 |          541 |           0 | f      |
+|       69532 |     787 | Geoff Reid                                   |           98 |           1 | t      |
+|       18053 |         | DZV - Jean Lareau                            |            1 |           0 | f      |
+|       47097 |         | Hannah Dylewski                              |           12 |           0 | t      |
+|        8949 |       4 | Sandy Morrison                               |          266 |           0 | t      |
+|       37911 |     425 | Heather deVink                               |         2330 |           0 | t      |
+|       10840 |         | Expertises Courval Inc.                      |            2 |           0 | f      |
+|       19377 |      71 | Ryan Gussak                                  |          844 |           0 | t      |
+|       36768 |     421 | Bobbi Brooklyn                               |            1 |           1 | t      |
+|       14020 |         | Resto Disco Bar Le Broadway                  |            1 |           0 | f      |

@@ -1,0 +1,40 @@
+<div data-ecm-pi>
+  <style>
+    [data-ecm-pi] {
+      position:fixed;
+      right:0px;
+      bottom:0px;
+    }
+    [data-ecm-pi] button {
+     width: 40px;
+     height: 40px;
+     font-size: 35px;
+     border: unset;
+     background: unset;
+     opacity: 0;
+     transition: all 300ms;      /*Animation to close the button (circle)*/
+
+    }
+
+    [data-ecm-pi] button:hover {
+      transition: all 5000ms cubic-bezier(.62,.1,.5,1);      
+      opacity: 1;
+   }
+    
+
+  </style>
+   <script>
+     ECM.cornerPI = function () {
+      ECM.isAdmin && ECM.isAdmin(u => {
+       console.log('cornerPi', u)
+      const modal = ECM.isAdmin.modal || EcmElement.prototype.createHTML(
+       ECM.isAdmin.modalHTML
+     )
+
+     UIkit.modal(modal).show()
+    
+    })
+    }
+   </script>
+    <button onclick="ECM.cornerPI(event)">&pi;</button>
+  </div>

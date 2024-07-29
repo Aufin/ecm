@@ -1,0 +1,1894 @@
+#+TITLE: Address 
+
+An address is a collection of information, presented in a mostly fixed format,
+used to give the location of a building, apartment, or other structure or a plot
+of land, generally using political boundaries and street names as references,
+along with other identifiers such as house or apartment numbers and organization
+name. Some addresses also contain special codes, such as a postal code, to make
+identification easier and aid in the routing of mail.
+
+
+* Countries/Nations
+
+Locations are almost always in a country. ISO 3166-1 defines codes for the
+names of countries, dependent territories, and special areas of geographical
+interest. https://en.wikipedia.org/wiki/List_of_ISO_3166_country_codes
+
+** /SQL Table/: Country(name, code)
+ #+NAME: address-country-table
+ #+BEGIN_SRC sql
+ CREATE TABLE IF NOT EXISTS country (
+   name text,
+   code VARCHAR(2) PRIMARY KEY -- alpha-2
+ );
+ #+END_SRC
+
+
+ #+NAME: address-country-insert
+ #+BEGIN_SRC sql
+
+ INSERT INTO country(name, code) VALUES
+  ('Afghanistan', 'AF') ,
+   ('Åland Islands', 'AX'),
+   ('Albania', 'AL'),
+   ('Algeria', 'DZ'),
+   ('American Samoa', 'AS'),
+   ('Andorra', 'AD'),
+   ('Angola', 'AO'),
+   ('Anguilla', 'AI'),
+   ('Antarctica', 'AQ'),
+   ('Antigua and Barbuda', 'AG'),
+   ('Argentina', 'AR'),
+   ('Armenia', 'AM'),
+   ('Aruba', 'AW'),
+   ('Australia', 'AU'),
+   ('Austria', 'AT'),
+   ('Azerbaijan', 'AZ'),
+   ('Bahamas', 'BS'),
+   ('Bahrain', 'BH'),
+   ('Bangladesh', 'BD'),
+   ('Barbados', 'BB'),
+   ('Belarus', 'BY'),
+   ('Belgium', 'BE'),
+   ('Belize', 'BZ'),
+   ('Benin', 'BJ'),
+   ('Bermuda', 'BM'),
+   ('Bhutan', 'BT'),
+   ('Bolivia, Plurinational State of', 'BO'),
+   ('Bonaire, Sint Eustatius and Saba', 'BQ'),
+   ('Bosnia and Herzegovina', 'BA'),
+   ('Botswana', 'BW'),
+   ('Bouvet Island', 'BV'),
+   ('Brazil', 'BR'),
+   ('British Indian Ocean Territory', 'IO'),
+   ('Brunei Darussalam', 'BN'),
+   ('Bulgaria', 'BG'),
+   ('Burkina Faso', 'BF'),
+   ('Burundi', 'BI'),
+   ('Cambodia', 'KH'),
+   ('Cameroon', 'CM'),
+   ('Canada', 'CA'),
+   ('Cape Verde', 'CV'),
+   ('Cayman Islands', 'KY'),
+   ('Central African Republic', 'CF'),
+   ('Chad', 'TD'),
+   ('Chile', 'CL'),
+   ('China', 'CN'),
+   ('Christmas Island', 'CX'),
+   ('Cocos (Keeling) Islands', 'CC'),
+   ('Colombia', 'CO'),
+   ('Comoros', 'KM'),
+   ('Congo', 'CG'),
+   ('Congo, the Democratic Republic of the', 'CD'),
+   ('Cook Islands', 'CK'),
+   ('Costa Rica', 'CR'),
+   ('Côte d''Ivoire', 'CI'),
+   ('Croatia', 'HR'),
+   ('Cuba', 'CU'),
+   ('Curaçao', 'CW'),
+   ('Cyprus', 'CY'),
+   ('Czech Republic', 'CZ'),
+   ('Denmark', 'DK'),
+   ('Djibouti', 'DJ'),
+   ('Dominica', 'DM'),
+   ('Dominican Republic', 'DO'),
+   ('Ecuador', 'EC'),
+   ('Egypt', 'EG'),
+   ('El Salvador', 'SV'),
+   ('Equatorial Guinea', 'GQ'),
+   ('Eritrea', 'ER'),
+   ('Estonia', 'EE'),
+   ('Ethiopia', 'ET'),
+   ('Falkland Islands (Malvinas)', 'FK'),
+   ('Faroe Islands', 'FO'),
+   ('Fiji', 'FJ'),
+   ('Finland', 'FI'),
+   ('France', 'FR'),
+   ('French Guiana', 'GF'),
+   ('French Polynesia', 'PF'),
+   ('French Southern Territories', 'TF'),
+   ('Gabon', 'GA'),
+   ('Gambia', 'GM'),
+   ('Georgia', 'GE'),
+   ('Germany', 'DE'),
+   ('Ghana', 'GH'),
+   ('Gibraltar', 'GI'),
+   ('Greece', 'GR'),
+   ('Greenland', 'GL'),
+   ('Grenada', 'GD'),
+   ('Guadeloupe', 'GP'),
+   ('Guam', 'GU'),
+   ('Guatemala', 'GT'),
+   ('Guernsey', 'GG'),
+   ('Guinea', 'GN'),
+   ('Guinea-Bissau', 'GW'),
+   ('Guyana', 'GY'),
+   ('Haiti', 'HT'),
+   ('Heard Island and McDonald Islands', 'HM'),
+   ('Holy See (Vatican City State)', 'VA'),
+   ('Honduras', 'HN'),
+   ('Hong Kong', 'HK'),
+   ('Hungary', 'HU'),
+   ('Iceland', 'IS'),
+   ('India', 'IN'),
+   ('Indonesia', 'ID'),
+   ('Iran, Islamic Republic of', 'IR'),
+   ('Iraq', 'IQ'),
+   ('Ireland', 'IE'),
+   ('Isle of Man', 'IM'),
+   ('Israel', 'IL'),
+   ('Italy', 'IT'),
+   ('Jamaica', 'JM'),
+   ('Japan', 'JP'),
+   ('Jersey', 'JE'),
+   ('Jordan', 'JO'),
+   ('Kazakhstan', 'KZ'),
+   ('Kenya', 'KE'),
+   ('Kiribati', 'KI'),
+   ('Korea, Democratic People''s Republic of', 'KP'),
+   ('Korea, Republic of', 'KR'),
+   ('Kuwait', 'KW'),
+   ('Kyrgyzstan', 'KG'),
+   ('Lao People''s Democratic Republic', 'LA'),
+   ('Latvia', 'LV'),
+   ('Lebanon', 'LB'),
+   ('Lesotho', 'LS'),
+   ('Liberia', 'LR'),
+   ('Libya', 'LY'),
+   ('Liechtenstein', 'LI'),
+   ('Lithuania', 'LT'),
+   ('Luxembourg', 'LU'),
+   ('Macao', 'MO'),
+   ('Macedonia, the Former Yugoslav Republic of', 'MK'),
+   ('Madagascar', 'MG'),
+   ('Malawi', 'MW'),
+   ('Malaysia', 'MY'),
+   ('Maldives', 'MV'),
+   ('Mali', 'ML'),
+   ('Malta', 'MT'),
+   ('Marshall Islands', 'MH'),
+   ('Martinique', 'MQ'),
+   ('Mauritania', 'MR'),
+   ('Mauritius', 'MU'),
+   ('Mayotte', 'YT'),
+   ('Mexico', 'MX'),
+   ('Micronesia, Federated States of', 'FM'),
+   ('Moldova, Republic of', 'MD'),
+   ('Monaco', 'MC'),
+   ('Mongolia', 'MN'),
+   ('Montenegro', 'ME'),
+   ('Montserrat', 'MS'),
+   ('Morocco', 'MA'),
+   ('Mozambique', 'MZ'),
+   ('Myanmar', 'MM'),
+   ('Namibia', 'NA'),
+   ('Nauru', 'NR'),
+   ('Nepal', 'NP'),
+   ('Netherlands', 'NL'),
+   ('New Caledonia', 'NC'),
+   ('New Zealand', 'NZ'),
+   ('Nicaragua', 'NI'),
+   ('Niger', 'NE'),
+   ('Nigeria', 'NG'),
+   ('Niue', 'NU'),
+   ('Norfolk Island', 'NF'),
+   ('Northern Mariana Islands', 'MP'),
+   ('Norway', 'NO'),
+   ('Oman', 'OM'),
+   ('Pakistan', 'PK'),
+   ('Palau', 'PW'),
+   ('Palestine, State of', 'PS'),
+   ('Panama', 'PA'),
+   ('Papua New Guinea', 'PG'),
+   ('Paraguay', 'PY'),
+   ('Peru', 'PE'),
+   ('Philippines', 'PH'),
+   ('Pitcairn', 'PN'),
+   ('Poland', 'PL'),
+   ('Portugal', 'PT'),
+   ('Puerto Rico', 'PR'),
+   ('Qatar', 'QA'),
+   ('Réunion', 'RE'),
+   ('Romania', 'RO'),
+   ('Russian Federation', 'RU'),
+   ('Rwanda', 'RW'),
+   ('Saint Barthélemy', 'BL'),
+   ('Saint Helena, Ascension and Tristan da Cunha', 'SH'),
+   ('Saint Kitts and Nevis', 'KN'),
+   ('Saint Lucia', 'LC'),
+   ('Saint Martin (French part)', 'MF'),
+   ('Saint Pierre and Miquelon', 'PM'),
+   ('Saint Vincent and the Grenadines', 'VC'),
+   ('Samoa', 'WS'),
+   ('San Marino', 'SM'),
+   ('Sao Tome and Principe', 'ST'),
+   ('Saudi Arabia', 'SA'),
+   ('Senegal', 'SN'),
+   ('Serbia', 'RS'),
+   ('Seychelles', 'SC'),
+   ('Sierra Leone', 'SL'),
+   ('Singapore', 'SG'),
+   ('Sint Maarten (Dutch part)', 'SX'),
+   ('Slovakia', 'SK'),
+   ('Slovenia', 'SI'),
+   ('Solomon Islands', 'SB'),
+   ('Somalia', 'SO'),
+   ('South Africa', 'ZA'),
+   ('South Georgia and the South Sandwich Islands', 'GS'),
+   ('South Sudan', 'SS'),
+   ('Spain', 'ES'),
+   ('Sri Lanka', 'LK'),
+   ('Sudan', 'SD'),
+   ('Suriname', 'SR'),
+   ('Svalbard and Jan Mayen', 'SJ'),
+   ('Swaziland', 'SZ'),
+   ('Sweden', 'SE'),
+   ('Switzerland', 'CH'),
+   ('Syrian Arab Republic', 'SY'),
+   ('Taiwan, Province of China', 'TW'),
+   ('Tajikistan', 'TJ'),
+   ('Tanzania, United Republic of', 'TZ'),
+   ('Thailand', 'TH'),
+   ('Timor-Leste', 'TL'),
+   ('Togo', 'TG'),
+   ('Tokelau', 'TK'),
+   ('Tonga', 'TO'),
+   ('Trinidad and Tobago', 'TT'),
+   ('Tunisia', 'TN'),
+   ('Turkey', 'TR'),
+   ('Turkmenistan', 'TM'),
+   ('Turks and Caicos Islands', 'TC'),
+   ('Tuvalu', 'TV'),
+   ('Uganda', 'UG'),
+   ('Ukraine', 'UA'),
+   ('United Arab Emirates', 'AE'),
+   ('United Kingdom', 'GB'),
+   ('United States', 'US'),
+   ('United States Minor Outlying Islands', 'UM'),
+   ('Uruguay', 'UY'),
+   ('Uzbekistan', 'UZ'),
+   ('Vanuatu', 'VU'),
+   ('Venezuela, Bolivarian Republic of', 'VE'),
+   ('Viet Nam', 'VN'),
+   ('Virgin Islands, British', 'VG'),
+   ('Virgin Islands, U.S.', 'VI'),
+   ('Wallis and Futuna', 'WF'),
+   ('Western Sahara', 'EH'),
+   ('Yemen', 'YE'),
+   ('Zambia', 'ZM'),
+   ('Zimbabwe', 'ZW') ON CONFLICT DO NOTHING;
+ #+END_SRC
+** Dump the table for source
+
+ We'll dump them and place the whole thing into a nice SQL file.
+
+ #+begin_src shell
+pg_dump --host=localhost --dbname=maxclaims --username=maxclaims --table country > /tmp/country.sql
+mv /tmp/country.sql ./sql
+ #+end_src
+
+ #+RESULTS:
+
+
+* Provinces/Territories/States
+
+    As luck would have it, ISO 3166-2 deals with just this!
+
+    #+NAME: address-province-table
+    #+BEGIN_SRC sql
+      -- DROP TABLE province;
+      CREATE TABLE IF NOT EXISTS province (
+        name text,
+        code TEXT,
+        country VARCHAR(2) REFERENCES country(code) DEFAULT 'CA',
+        PRIMARY KEY (code, country)
+      );
+  #+END_SRC
+
+#+begin_src shell
+cp ./csv/province.csv /tmp ;
+chmod 777 /tmp/province.csv && echo "done"
+#+end_src
+
+
+#+NAME: address-province-insert
+ #+begin_src sql
+ COPY province FROM '/tmp/province.csv' DELIMITER ',' CSV HEADER;
+ #+end_src
+
+#+begin_src sql
+ SELECT * FROM province WHERE country = 'CA';
+ #+end_src
+
+ #+RESULTS:
+ | name                      | code | country |
+ |---------------------------+------+---------|
+ | Alberta                   | AB   | CA      |
+ | British Columbia          | BC   | CA      |
+ | Manitoba                  | MB   | CA      |
+ | New Brunswick             | NB   | CA      |
+ | Newfoundland and Labrador | NL   | CA      |
+ | Northwest Territories     | NT   | CA      |
+ | Nova Scotia               | NS   | CA      |
+ | Nunavut                   | NU   | CA      |
+ | Ontario                   | ON   | CA      |
+ | Prince Edward Island      | PE   | CA      |
+ | Quebec                    | QC   | CA      |
+ | Saskatchewan              | SK   | CA      |
+ | Yukon                     | YT   | CA      |
+
+
+** Dump table
+
+ We'll dump them and place the whole thing into a nice SQL file.
+
+ #+begin_src shell
+pg_dump --host=localhost --dbname=maxclaims --username=maxclaims --table province > /tmp/province.sql
+mv /tmp/province.sql ./sql && echo "done"
+ #+end_src
+
+ #+RESULTS:
+ : done
+
+
+** How we made that .csv: ISO-3166, and provinces
+
+We've downloaded a CSV.
+
+#+begin_src shell
+cp /home/user/src/ecm/sql/IP2LOCATION-ISO3166-2.CSV /tmp ;
+#+end_src
+
+#+RESULTS:
+
+#+begin_src sql
+CREATE TEMPORARY TABLE ip2location (
+  country TEXT,
+  name TEXT,
+  code TEXT);
+
+COPY ip2location FROM '/tmp/IP2LOCATION-ISO3166-2.CSV' DELIMITER ',' CSV HEADER;
+
+-- There are some codes that are just -. We'll set them to name.
+
+UPDATE ip2location SET code = name WHERE code = '-';
+
+UPDATE ip2location SET code = substring(code FROM 4) WHERE code LIKE (country || '-%');
+
+TRUNCATE province;
+
+INSERT INTO province (name, code, country) SELECT name, code, country FROM ip2location;
+
+COPY province TO '/tmp/province.csv' DELIMITER ',' CSV HEADER;
+
+TRUNCATE province;
+#+end_src
+
+#+RESULTS:
+| CREATE TABLE   |
+|----------------|
+| COPY 3402      |
+| UPDATE 161     |
+| UPDATE 3241    |
+| TRUNCATE TABLE |
+| INSERT 0 3402  |
+| COPY 3402      |
+| TRUNCATE TABLE |
+
+So we now have our own province which still needs inserting.
+
+
+#+begin_src sql
+COPY province FROM '/tmp/province.csv' DELIMITER ',' CSV HEADER;
+SELECT * FROM province WHERE country = 'CA';
+#+end_src
+
+#+begin_src shell
+cp /tmp/province.csv ~/src/ecm/sql
+#+end_src
+#+RESULTS:
+
+* The ~address~ table
+
+  We store all addresses in one table.
+
+  #+NAME: address-table
+  #+BEGIN_SRC sql
+ -- DROP TABLE address CASCADE;
+CREATE TABLE IF NOT EXISTS address (
+  address_id SERIAL PRIMARY KEY,
+  line1 TEXT,
+  line2 TEXT,
+  city TEXT,
+  province VARCHAR(2) NOT NULL,
+  country VARCHAR(2) REFERENCES country(code) NOT NULL DEFAULT 'CA',
+  postal_code TEXT,
+  FOREIGN KEY (province, country) REFERENCES province(code, country),
+  unique(line1, line2, city, province, country, postal_code)
+);
+  #+END_SRC
+
+Now, we want a unique constraint to ensure that a user cannot accidently enter the same address.
+
+#+begin_src sql :noweb-ref no-line2-unique
+CREATE UNIQUE INDEX unique_address_no_line2
+ ON address (line1, (line2 IS NULL), city, province, country, postal_code)
+ WHERE line2 IS NULL;
+#+end_src
+
+#+RESULTS:
+| CREATE INDEX |
+|--------------|
+
+
+Now, in Canada, the postal code should be a certainway.
+
+  #+begin_src sql :noweb-ref valid-postal-code
+ALTER TABLE address ADD CONSTRAINT valid_canadian_postal_code CHECK(country != 'CA' OR (postal_code IS NULL OR postal_code ~ '^[A-Z]{1}[0-9]{1}[A-Z]{1} [0-9]{1}[A-Z]{1}[0-9]{1}'));
+  #+end_src
+
+  #+RESULTS:
+  |---|
+
+  But not everyone will enter it that way... including triggers for backports. So, trigger time.
+
+  #+begin_src sql :noweb-ref postal-code-trigger
+CREATE OR REPLACE FUNCTION address_correct_postal_code() RETURNS trigger AS $$
+    BEGIN
+        IF (NEW.country = 'CA' AND NEW.postal_code IS NOT NULL) THEN
+        NEW.postal_code = UPPER(REGEXP_REPLACE(NEW.postal_code
+                  , '^([A-Z]{1})([0-9]{1})([A-Z]{1}).*([0-9]{1})([A-Z]{1})([0-9]{1})'
+                 ,'\1\2\3 \4\5\6', 'i'));
+        END IF;
+
+        RETURN NEW;
+    END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS address_correct_postal_code ON address;
+CREATE TRIGGER address_correct_postal_code BEFORE INSERT OR UPDATE ON address
+    FOR EACH ROW EXECUTE PROCEDURE address_correct_postal_code();
+
+  #+end_src
+
+  #+RESULTS:
+  | CREATE FUNCTION |
+  |-----------------|
+  | DROP TRIGGER    |
+  | CREATE TRIGGER  |
+
+** /File/ ~address.sql
+
+#+begin_src sql :noweb yes :tangle ./sql/address.sql
+<<address-table>>
+
+
+<<no-line2-unique>>
+
+<<valid-postal-code>>
+
+<<postal-code-trigger>>
+#+end_src
+ #+RESULTS:
+ | CREATE TABLE |
+ |--------------|
+
+** Testing it out
+      #+BEGIN_SRC sql
+INSERT INTO address(id, line1, city, province, country, postal_code)
+ VALUES (DEFAULT, 'PaaaaO Box i29i3', 'Bowen Island', 'BC', 'CA', 'V0N - 1g1')
+ RETURNING address;
+
+  #+END_SRC
+
+  #+RESULTS:
+  | address                                                |
+  |--------------------------------------------------------|
+  | (1,"PaaaaO Box i29i3",,"Bowen Island",BC,CA,"V0N 1G1") |
+  | INSERT 0 1                                             |
+
+#+begin_src sql
+DROP TABLE address;
+#+end_src
+  #+RESULTS:
+  | DROP TABLE |
+  |------------|
+
+* Backports and Triggers
+
+  Like almost everything, there's some past data that needs to be kept up to
+  speed for older clients.
+
+  The ~person~ table currently has address information as part of the person.
+  That will be gotten rid of at some point, but for now we trigger, and add a column.
+
+  #+begin_src sql
+    ALTER TABLE person ADD COLUMN IF NOT EXISTS address_id INT;
+    -- ALTER TABLE person DROP COLUMN country;
+    ALTER TABLE person 
+     ADD COLUMN IF NOT EXISTS 
+       country TEXT REFERENCES country(code) DEFAULT 'CA'
+  #+end_src
+
+  #+RESULTS:
+  | ALTER TABLE |
+  |-------------|
+  | ALTER TABLE |
+
+  #+begin_src sql
+CREATE OR REPLACE FUNCTION person_to_country(person)
+  RETURNS VARCHAR(2) LANGUAGE plpgsql IMMUTABLE AS $$
+  DECLARE
+  _ca TEXT;
+  _pca TEXT;
+  BEGIN
+    -- The old school has no countries.
+    -- Here we decide one.
+    IF ($1.province_state_id IS NOT NULL AND $1.country IS NULL)
+    THEN
+      IF ($1.province_state_id < 13)
+      THEN _pca := 'CA' ;
+        ELSEIF ($1.province_state_id < 17)
+          THEN _pca := 'US';
+            ELSEIF ($1.province_state_id >= 100)
+              THEN _pca := 'AU';
+                END IF;
+      END IF;
+    -- If there is a country, use that instead.
+    _ca :=COALESCE($1.country, _pca);
+    RETURN _ca;
+  END;
+$$;
+
+ CREATE OR REPLACE FUNCTION person_to_province(person)
+  RETURNS TEXT LANGUAGE SQL STABLE AS $$
+  SELECT short_name FROM province_state
+  WHERE $1.province_state_id = province_state_id;
+$$;
+
+
+CREATE OR REPLACE FUNCTION person_to_address(person, _address_id INT DEFAULT NULL::INT)
+   RETURNS address LANGUAGE SQL IMMUTABLE AS $$
+  SELECT $2, $1.address1, $1.address2, $1.city,
+  person_to_province($1), person_to_country($1),
+    CASE WHEN (COALESCE($1.postal_code, $1.postal_zip_code) != '') THEN  COALESCE($1.postal_code, $1.postal_zip_code) END;
+$$;
+
+CREATE OR REPLACE FUNCTION find_clone_address(address)
+ RETURNS address LANGUAGE SQL AS $$
+ SELECT * FROM address
+  WHERE line1 = $1.line1 AND line2 = $1.line2
+        AND city = $1.city AND province = $1.province
+        AND country = $1.country AND postal_code = $1.postal_code
+$$;
+
+CREATE OR REPLACE FUNCTION ensure_person_address (person)
+  RETURNS person LANGUAGE plpgsql AS $$
+  DECLARE
+  _a_id INT;
+  _new_pa address;
+  _old_pa address;
+  NEW person;
+  BEGIN
+    NEW := $1;
+    _new_pa := person_to_address(NEW, NULL::int);
+    _old_pa := find_clone_address(_new_pa);
+    -- If there's not any address but the person has one, INSERT one!
+     IF ((_old_pa IS NULL AND _new_pa.province IS NOT NULL AND NEW.address_id IS NULL)
+         AND (NEW.address1 IS NOT NULL
+              OR NEW.address2 IS NOT NULL
+              OR NEW.city IS NOT NULL
+              OR NEW.province_state_id IS NOT NULL
+              -- OR NEW.country IS NOT NULL
+              OR NEW.postal_code IS NOT NULL
+              OR NEW.postal_zip_code IS NOT NULL)
+     ) THEN
+        INSERT INTO address (line1, line2, city, province, country, postal_code) SELECT line1, line2, city, province, country, postal_code FROM (SELECT (person_to_address(NEW)).*) pa
+       RETURNING address_id INTO _a_id;
+       -- INSERT INTO address(line1, line2, city, province, country, postal_code)
+
+       -- VALUES (_new_pa.line1, _new_pa.line2, _new_pa.city, 'QC', --_new_pa.province,
+       --        'CA', --_new_pa.country,
+       --              _new_pa.postal_code)
+       -- RETURNING address_id INTO _a_id;
+     NEW.address_id := _a_id;
+      -- UPDATE person SET address_id = NEW.address_id;
+       ELSE NEW.address_id = _old_pa.address_id;
+      END IF;
+   RETURN NEW;
+   END;
+$$;
+
+
+
+CREATE OR REPLACE FUNCTION ensure_person_address ()
+  RETURNS trigger LANGUAGE plpgsql AS $$
+  DECLARE
+  _a_id INT;
+  _new_person person;
+  BEGIN
+    _new_person := ensure_person_address(NEW);
+    NEW.address_id = _new_person.address_id;
+   RETURN NEW;
+   END;
+$$;
+
+CREATE OR REPLACE FUNCTION update_person_address ()
+  RETURNS trigger LANGUAGE plpgsql AS $$
+  DECLARE
+  _a_id INT;
+  _new_person person;
+  BEGIN
+    _new_person := ensure_person_address(NEW);
+    NEW.address_id = _new_person.address_id;
+   RETURN NEW;
+   END;
+$$;
+
+
+    DROP TRIGGER
+          IF EXISTS z_create_address ON person;
+            CREATE TRIGGER z_create_address
+               AFTER insert ON person
+              FOR EACH row EXECUTE procedure
+                public.ensure_person_address();
+  #+end_src
+
+  #+RESULTS:
+  | CREATE FUNCTION |
+  |-----------------|
+  | CREATE FUNCTION |
+  | CREATE FUNCTION |
+  | CREATE FUNCTION |
+  | CREATE FUNCTION |
+  | CREATE FUNCTION |
+  | DROP TRIGGER    |
+  | CREATE TRIGGER  |
+#+begin_src sql
+SELECT * FROM person WHERE province_state_id = 23;
+#+end_src
+
+#+begin_src sql
+UPDATE province_state SET short_name = 'MB' WHERE short_name = 'MN';
+UPDATE province_state SET short_name = 'NL' WHERE short_name = 'NF';
+UPDATE province_state SET short_name = 'QC' WHERE short_name = 'QU';
+UPDATE person SET country = 'AU' WHERE province_state_id >= 100;
+UPDATE person SET address2 = address2;
+
+SELECT count(*) FROM address;
+#+end_src
+  #+RESULTS:
+  | UPDATE 0   |
+  |------------|
+  | UPDATE 0   |
+  | UPDATE 1   |
+  | UPDATE 235 |
+
+** Old province_state table
+
+#+begin_src sql
+SELECT * FROM province_state;
+#+end_src
+
+#+RESULTS:
+| province_state_id | short_name | long_name                    |
+|-------------------+------------+------------------------------|
+|                 1 | BC         | British Columbia             |
+|                 2 | AB         | Alberta                      |
+|                 3 | SK         | Saskatchewan                 |
+|                 5 | ON         | Ontario                      |
+|                 7 | PE         | Prince Edward Island         |
+|                 8 | NS         | Nova Scotia                  |
+|                 9 | NB         | New Brunswick                |
+|                12 | NT         | Northwest Territories        |
+|                14 | WA         | Washington State             |
+|                16 | CA         | California                   |
+|                17 | AZ         | Arizona                      |
+|                23 | OT         | Other                        |
+|               100 | ACT        | Australian Capital Territory |
+|               101 | NSW        | New South Wales              |
+|               102 | NT         | Northern Territory           |
+|               103 | QLD        | Queensland                   |
+|               104 | SA         | South Australia              |
+|               105 | TAS        | Tasmania                     |
+|               106 | VIC        | Victoria                     |
+|               107 | WA         | Western Australia            |
+|                 4 | MB         | Manitoba                     |
+|                10 | NL         | Newfoundland                 |
+|                 6 | QC         | Quebec                       |
+|                11 | YT         | Yukon                        |
+
+* The ~postal~ field
+
+The way we have addresses laid out is fine for almost all reports, yet there are
+a number of things that require further examination. Not only that, but we may
+need to parse in order to turn things into our representation.
+
+libpostal to the rescue.
+
+ #+begin_src sql
+
+
+CREATE EXTENSION postal;
+
+ #+end_src
+
+ #+RESULTS:
+ |   |
+
+**  libpostal
+  
+   https://github.com/openvenues/libpostal
+
+*** Installation
+
+     #+BEGIN_SRC sh
+sudo apt-get -y install curl autoconf automake libtool pkg-config git
+cd /tmp 
+git clone https://github.com/openvenues/libpostal
+cd /usr/local/src/
+sudo mv /tmp/libpostal . 
+sudo chown -R $USER libpostal
+cd libpostal
+./bootstrap.sh
+mkdir data-cache
+./configure --datadir="`pwd`/data-cache"
+make
+sudo make install 
+sudo ldconfig
+     #+END_SRC
+
+     
+*** pgsql-postal
+
+
+    https://github.com/pramsey/pgsql-postal
+
+wget http://raw.githubusercontent.com/openvenues/pgsql-postal/9536d2b98086e6eb3cbfed1cdaabbc34be0447b0/postal.c
+    #+BEGIN_SRC sh
+sudo apt-get install postgresql-server-dev-10 libpq-dev
+cd /tmp 
+git clone https://github.com/pramsey/pgsql-postal.git
+sudo chown -R $USER pgsql-postal
+cd /usr/local/src/
+sudo mv /tmp/pgsql-postal .
+cd pgsql-postal/
+make
+sudo make install
+    #+END_SRC
+
+*** Examples
+
+`=# SELECT unnest(postal_normalize('412 first ave, victoria, bc'));
+
+                  unnest                  
+------------------------------------------
+ 412 1st avenue victoria british columbia
+ 412 1st avenue victoria bc
+(2 rows)
+
+
+=# SELECT postal_parse('412 first ave, victoria, bc');
+
+postal_parse                                   
+---------------------------------------------------------------------------------
+ {"city": "victoria", "road": "first ave", "state": "bc", "house_number": "412"}
+(1 row)
+Functions
+postal_normalize(address TEXT) returns TEXT[]
+postal_parse(address TEXT) returns JSONB
+
+
+
+* Printing and Parsing Addresses 
+
+#+NAME: parse_address_to_json
+#+BEGIN_SRC sql
+    CREATE OR REPLACE FUNCTION parse_address_to_json(text)
+     RETURNS json LANGUAGE plpgsql AS $$
+     DECLARE
+       arraydress text[] ;
+       arraydress_length INTEGER;
+ 
+       line1 text;
+       line2 text;
+       city text;
+       _province text;
+       two_letter_province TEXT := NULL::text;
+       postal_code text;
+       _country text;
+       two_letter_country TEXT := NULL::text ;
+     BEGIN
+       SELECT regexp_split_to_array($1, ', ') INTO arraydress;      
+       arraydress_length := array_length(arraydress, 1);
+
+       -- '227A OSSINGTON AVENUE, TORONTO, ON, M6J 2Z8, CA'
+       IF (arraydress_length = 5
+           AND char_length(arraydress[3]) = 2) THEN 
+         line1 := arraydress[1];
+         city := arraydress[2];
+         _province := arraydress[3];
+         postal_code := arraydress[4];
+         _country := arraydress[5];
+
+       --  Calgary from 1200, 700-2nd Street SW, Calgary, AB, CA
+        ELSEIF (arraydress_length = 5
+             AND char_length(arraydress[4]) = 2
+             AND char_length(arraydress[5]) = 2) THEN 
+         line1 := arraydress[1];
+         line2 := arraydress[2];
+         city := arraydress[3];
+         _province := arraydress[4];
+         _country := arraydress[5];
+
+       -- 4250 St. Ambroise, unit 416, Montréal, QC, H4C 3R4 
+
+       ELSEIF (arraydress_length = 5
+             AND char_length(arraydress[4]) = 2
+             AND char_length(arraydress[5]) >= 6) THEN 
+         line1 := arraydress[1];
+         line2 := arraydress[2];
+         city := arraydress[3];
+         _province := arraydress[4];
+           postal_code := arraydress[5];
+         _country := 'CA';
+
+
+       --8580 Alexandra Road Unit 2015, 2020 & 2025, Richmond, BC, V6X4B3, CA
+       ELSEIF (arraydress_length = 6) THEN 
+         line1 := arraydress[1];
+         line2 := arraydress[2];
+         city := arraydress[3];
+         _province := arraydress[4];
+         postal_code := arraydress[5];
+         _country := arraydress[6];
+
+
+  
+           -- 122 East Hastings Street, Vancouver, V6A 1N4, CA
+
+        ELSEIF (arraydress_length = 4 
+                AND arraydress[2] = 'Vancouver' 
+                AND char_length(arraydress[3]) != 2) THEN 
+         line1 := arraydress[1];
+         city := arraydress[2];
+         _province := 'BC';
+         postal_code := arraydress[3];
+         _country := arraydress[4];
+
+        -- 1374 Queen Street West, Toronto, M6K 1L7, CA
+
+        ELSEIF (arraydress_length = 4 
+                AND arraydress[2] = 'Toronto' 
+                AND char_length(arraydress[3]) != 2) THEN 
+         line1 := arraydress[1];
+         city := arraydress[2];
+         _province := 'ON';
+         postal_code := arraydress[3];
+         _country := arraydress[4];
+
+        -- 6892 Fremlin Street, Vancouver, BC, v6P 3w4
+
+        ELSEIF (arraydress_length = 4 
+                AND char_length(arraydress[3]) = 2
+                AND (char_length(arraydress[4]) = 7 
+                     OR char_length(arraydress[4]) = 8)) THEN 
+         line1 := arraydress[1];
+         city := arraydress[2];
+         _province := arraydress[3];
+         postal_code := arraydress[4];
+         _country := 'CA';
+
+      -- 3665 Kingsway, Vancouver, BC, CA
+        ELSEIF (arraydress_length = 4 
+               AND char_length(arraydress[3]) = 2
+	       AND char_length(arraydress[4]) = 2) THEN 
+         line1 := arraydress[1];
+         city := arraydress[2];
+         _province := arraydress[3];
+         _country := arraydress[4];
+
+        -- 1344 Commercial Drive, Vancouver, CA
+
+        ELSEIF (arraydress_length = 3 AND arraydress[2] = 'Vancouver') THEN 
+         line1 := arraydress[1];
+         city := arraydress[2];
+         _province := 'BC';
+         _country := arraydress[3];
+
+        -- 'Edmonton, AB, CA', 'Cowichan, BC, CA', 'Nanaimo, BC, CA',
+        -- 'Cultus Lake, BC, CA', 'Labrador City, NL, CA, 
+        -- 'Surrey, BC,CA', 'Kelowna, BC, CA', Windsor, ON, CA
+        -- Sudbury, ON, CA, QEW, Ontario, CA, Ajax, ON, CA
+       -- Fort Lauderdale, FL, USA
+
+        ELSEIF (arraydress_length = 3 
+                AND (arraydress[1] = 'Edmonton'
+                     OR arraydress[1] = 'Fort Lauderdale'
+                     OR arraydress[1] = 'Cowichan' 
+                     OR arraydress[1] = 'Nanaimo' 
+                     OR arraydress[1] = 'Cultus Lake'
+                     OR arraydress[1] = 'Labrador City'
+		     OR arraydress[1] = 'Surrey'
+		     OR arraydress[1] = 'Kelowna'
+		     OR arraydress[1] = 'Windsor'
+		     OR arraydress[1] = 'Sudbury'
+		     OR arraydress[1] = 'QEW'
+                     OR arraydress[1] = 'Ajax')) THEN 
+         city := arraydress[1];
+         _province := arraydress[2];
+         _country := arraydress[3];
+
+  
+        -- BC, CA
+        ELSEIF (arraydress_length = 2 
+                AND char_length(arraydress[1]) = 2 
+                AND char_length(arraydress[2]) = 2) THEN 
+         _province := arraydress[1];
+         _country := arraydress[2];
+
+
+
+       END IF;
+
+ 
+      -- See if the country two letters. If not, try to create it.
+       IF (length(_country) = 2)
+        THEN two_letter_country := _country ;
+        ELSE SELECT code FROM country WHERE name = _country
+             INTO two_letter_country;
+       END IF;
+
+        -- See if the province is two letters. If not, try to create it.
+        IF (( two_letter_country IS NOT NULL) AND (length(_province) = 2))
+         THEN two_letter_province  := _province ;
+         ELSE SELECT code FROM province WHERE name = _province AND country = two_letter_country
+              INTO two_letter_province;
+        END IF;
+
+       -- if there is no province or country, set the country to CA
+        IF (two_letter_country IS NULL) THEN
+         RAISE NOTICE 'Cannot find country using % from "%"', _country, $1;
+        two_letter_country := 'CA';
+        ELSEIF (two_letter_province IS NULL) THEN
+         RAISE EXCEPTION 'Cannot find province using % from %', _province, $1;
+        END IF;
+        RETURN json_build_object(
+            'line1', line1, 'line2', line2,
+            'city', city, 'province', two_letter_province,
+            'postal_code', postal_code, 'country', two_letter_country);
+
+     END; $$;
+ 
+  -- SELECT parse_address_to_json('227A OSSINGTON AVENUE, TORONTO, ON, M6J 2Z8, CA');
+ 
+ 
+#+END_SRC
+
+#+RESULTS: parse_address_to_json
+| CREATE FUNCTION |
+|-----------------|
+
+#+begin_src sql
+CREATE OR REPLACE FUNCTION print_loss_address (json)
+ RETURNS text LANGUAGE SQL AS $$
+  SELECT trim(', ' FROM string_agg(value, ', ')) FROM json_each_text($1)
+$$;
+#+end_src
+
+#+RESULTS:
+| CREATE FUNCTION |
+|-----------------|
+
+#+begin_src sql :results code
+DROP TABLE postal_road_regexp;
+CREATE TABLE postal_road_regexp (
+  pattern text, 
+  replacement text,
+  UNIQUE(pattern)
+);
+
+INSERT INTO postal_road_regexp 
+  VALUES   ('To ', 'to '), ('(S|N)w$', '\1W')
+          -- McDonald 
+         , ('Mc([a-z])', UPPER('foo\1\1\1'))
+         , ('([0-9])a ', '\1A '), ('([0-9])b ', '\1B ')
+         , ('Rue D(e|u) ', 'rue d\1 ')
+         , ('Rue ', 'rue '), ('-Des-', '-des-')
+         , ('De ', 'de '), (' La ', ' la ') ;  
+
+CREATE OR REPLACE FUNCTION normalize_road_caps(text)
+RETURNS text LANGUAGE SQL AS $$ 
+ WITH RECURSIVE regs AS (
+  SELECT *, ROW_NUMBER() OVER () AS row_n FROM postal_road_regexp
+), norm(road, n) AS (
+   SELECT INITCAP($1), 0
+  UNION
+   SELECT regexp_replace(road, pattern, replacement, 'g'), row_n::int
+    FROM regs, norm  WHERE row_n = 1 + n
+)
+
+SELECT road FROM norm ORDER BY n DESC LIMIT 1;
+  
+$$;
+
+SELECT normalize_road_caps('220 1er rue du Mcont-Suisse near 123 foo drive, St-Sauveur-des-Monts, Quebec, J0R 1R2 ');
+
+#+end_src
+
+#+RESULTS:
+#+begin_src sql
+DROP TABLE
+CREATE TABLE
+INSERT 0 10
+CREATE FUNCTION
+normalize_road_caps
+220 1er rue du FOOooont-Suisse Near 123 Foo Drive, St-Sauveur-des-Monts, Quebec, J0r 1r2 
+#+end_src
+
+#+RESULTS:
+| postal_parse                                                                                                                         |
+|--------------------------------------------------------------------------------------------------------------------------------------|
+| {"city": "langdon", "road": "sandford place", "state": "alberta", "country": "canada", "postcode": "t0j 1x2", "house_number": "425"} |
+
+#+begin_src sql 
+CREATE OR REPLACE FUNCTION print_postal_address(pp jsonb)
+RETURNS text LANGUAGE SQL AS $$
+SELECT string_agg(thing, ', ') FROM UNNEST (
+     array[ 
+     --  'First Line' 
+       concat(pp->>'house_number', ' '
+              , normalize_road_caps(pp->>'road')
+              , CASE WHEN (pp->'unit' IS NOT NULL) THEN ' ' || INITCAP(pp->>'unit') END
+        )
+         -- AS line1
+       , normalize_road_caps(pp->>'city')-- AS city
+           , CASE WHEN ((char_length(pp->>'state') = 2)) 
+              THEN UPPER(pp->>'state') ELSE INITCAP(pp->>'state') 
+         END --AS province
+       , CASE WHEN ((char_length(pp->>'country') = 2)) 
+              THEN UPPER(pp->>'country') ELSE INITCAP(pp->>'country') 
+         END --AS country
+       , UPPER(pp->>'postcode')-- AS postal_code
+      ]) AS thing
+$$;
+
+#+end_src
+
+#+RESULTS:
+| CREATE FUNCTION |
+|-----------------|
+
+#+begin_src sql
+
+#+end_src
+#+RESULTS:
+| CREATE FUNCTION |
+|-----------------|
+| CREATE FUNCTION |
+
+
+#+begin_src sql :results inline 
+  WITH loss_address AS ( 
+    SELECT claim_id, jsi.loss(claim)->'location' AS loss_location FROM claim
+  ), pa AS ( 
+
+  SELECT print_loss_address(loss_location) AS l
+         ,postal_parse(print_loss_address(loss_location)) AS pp
+        ,  * FROM loss_address
+  )
+
+ SELECT * FROM 
+  (SELECT claim_id, loss = postal as eq, loss , postal, pp 
+    FROM (SELECT claim_id, print_postal_address(pp) AS postal, l AS loss, pp
+          FROM pa) AS add) AS add
+  WHERE NOT eq AND claim_id NOT IN (39027, 45591, 46942) LIMIT 20 
+
+#+end_src
+
+#+RESULTS:
+| claim_id | eq | loss                                                                 | postal                                                         | pp                                                                                                                                                |
+|----------+----+----------------------------------------------------------------------+----------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------------------------------------|
+|    46947 | f  | 3453, boul. Saint-Martin Ouest, laval, Québec, H7T 1A2               | 3453 Boul. Saint-Martin Ouest, Laval, Québec, H7T 1A2          | {"city": "laval", "road": "boul. saint-martin ouest", "state": "québec", "postcode": "h7t 1a2", "house_number": "3453"}                           |
+|    53959 | f  | 2 McDowell Street, Dundalk, Ontario, Canada, N0C 1B0                 | 2 FOOdowell Street, Dundalk, Ontario, Canada, N0C 1B0          | {"city": "dundalk", "road": "mcdowell street", "state": "ontario", "country": "canada", "postcode": "n0c 1b0", "house_number": "2"}               |
+|    53770 | f  | 23 Darrell's Road, Port de Grave, NL, Canada, A0A 3J0                | 23 Darrell'S Road, Port de Grave, NL, Canada, A0A 3J0          | {"city": "port de grave", "road": "darrell's road", "state": "nl", "country": "canada", "postcode": "a0a 3j0", "house_number": "23"}              |
+|    53883 | f  | NE 13-44-16-W4, Daysland, AB, Canada, T0B 1A0                        | , Daysland, AB, Canada, T0B 1A0                                | {"city": "daysland", "state": "ab", "country": "canada", "postcode": "t0b 1a0"}                                                                   |
+|    48587 | f  | 718 Lakeshore Dr, , North Bay, ON, CA, P1A 2G4                       | 718 Lakeshore Dr, North Bay, ON, CA, P1A 2G4                   | {"city": "north bay", "road": "lakeshore dr", "state": "on", "country": "ca", "postcode": "p1a 2g4", "house_number": "718"}                       |
+|    49789 | f  | Unit 7 2322 Dominion Road, Kelowna, BC, Canada, V1Z 2W8              | 2322 Dominion Road Unit 7, Kelowna, BC, Canada, V1Z 2W8        | {"city": "kelowna", "road": "dominion road", "unit": "unit 7", "state": "bc", "country": "canada", "postcode": "v1z 2w8", "house_number": "2322"} |
+|    42314 | f  | SE 1/4 1-34-2 W2nd, Norquay, SK, Canada, S0A 2V0                     | /4 1-34-2  Se 1, Norquay, SK, Canada, S0A 2V0                  | {"city": "norquay", "unit": "se 1", "state": "sk", "country": "canada", "postcode": "s0a 2v0", "house_number": "/4 1-34-2"}                       |
+|    53985 | f  | Charlesbourg, Québec                                                 | , Charlesbourg, Québec                                         | {"city": "charlesbourg", "state": "québec"}                                                                                                       |
+|    46990 | f  | 130 Skaha Place, Pentiction, BC, Canada, V2A 7J6                     | 130 Skaha Place Pentiction, BC, Canada, V2A 7J6                | {"road": "skaha place pentiction", "state": "bc", "country": "canada", "postcode": "v2a 7j6", "house_number": "130"}                              |
+|    46965 | f  | 3905B James Hill Road, Regina, Saskatchewan, Canada, S4W 0N8         | 3905b James Hill Road, Regina, Saskatchewan, Canada, S4W 0N8   | {"city": "regina", "road": "james hill road", "state": "saskatchewan", "country": "canada", "postcode": "s4w 0n8", "house_number": "3905b"}       |
+|    40761 | f  | Fort Lauderdale International Airport, Fort Lauderdale, Florida, USA | , Fort Lauderdale, Florida, Usa                                | {"city": "fort lauderdale", "house": "fort lauderdale international airport", "state": "florida", "country": "usa"}                               |
+|    42357 | f  | 4266 Beaconsfield Avenue NDG, QC, H4B 1G4                            | 4266 Beaconsfield Avenue, Ndg, QC, H4B 1G4                     | {"city": "ndg", "road": "beaconsfield avenue", "state": "qc", "postcode": "h4b 1g4", "house_number": "4266"}                                      |
+|    43578 | f  | 1460 Trans Canada Highway NE, Salmon Arm, BC, Canada, V1E 1N5        | 1460 Trans Canada Highway Ne, Salmon Arm, BC, Canada, V1E 1N5  | {"city": "salmon arm", "road": "trans canada highway ne", "state": "bc", "country": "canada", "postcode": "v1e 1n5", "house_number": "1460"}      |
+|    40856 | f  | 6310 McRobb Avenue, Nanaimo, BC, Canada, V9V 1E8                     | 6310 FOOrobb Avenue, Nanaimo, BC, Canada, V9V 1E8              | {"city": "nanaimo", "road": "mcrobb avenue", "state": "bc", "country": "canada", "postcode": "v9v 1e8", "house_number": "6310"}                   |
+|    54035 | f  | 600 Chemin J.P Lalande, St-Andre D’Argenteuil, Quebec, J0V 1X0       | 600 Chemin J.P Lalande, St-Andre D'Argenteuil, Quebec, J0V 1X0 | {"city": "st-andre d'argenteuil", "road": "chemin j.p lalande", "state": "quebec", "postcode": "j0v 1x0", "house_number": "600"}                  |
+|    46966 | f  | 3905B James Hill Road, Regina, Saskatchewan, Canada, S4W 0N8         | 3905b James Hill Road, Regina, Saskatchewan, Canada, S4W 0N8   | {"city": "regina", "road": "james hill road", "state": "saskatchewan", "country": "canada", "postcode": "s4w 0n8", "house_number": "3905b"}       |
+|    53961 | f  | 45 du Hudson Club Chemin, Rigaud, Quebec, J0P 1P0                    | 45 Du Hudson Club Chemin, Rigaud, Quebec, J0P 1P0              | {"city": "rigaud", "road": "du hudson club chemin", "state": "quebec", "postcode": "j0p 1p0", "house_number": "45"}                               |
+|    51220 | f  | Québec                                                               | , Québec                                                       | {"state": "québec"}                                                                                                                               |
+|    47012 | f  | 4752, Place Circle, Montreal, Quebec                                 | 4752 Place Circle, Montreal, Quebec                            | {"city": "montreal", "road": "place circle", "state": "quebec", "house_number": "4752"}                                                           |
+|    47039 | f  | 720 Willowbrook Road NE, Airdrie, AB, Canada, T4B 2Y9                | 720 Willowbrook Road Ne, Airdrie, AB, Canada, T4B 2Y9          | {"city": "airdrie", "road": "willowbrook road ne", "state": "ab", "country": "canada", "postcode": "t4b 2y9", "house_number": "720"}              |
+
+
+* Normalize
+
+** dont start or end with space 
+
+#+begin_src sql 
+UPDATE loss_detail SET value = TRIM(' ' FROM value);
+
+
+#+end_src
+
+#+RESULTS:
+| UPDATE 71578 |
+|--------------|
+
+** "100 to 104" to "100-104"
+
+That seems to be the valid way that libpostal prefers. 
+
+#+begin_src sql 
+  WITH loss_address AS ( 
+    SELECT claim_id, jsi.loss(claim)->'location' AS loss_location FROM claim
+  ), pa AS ( 
+
+  SELECT print_loss_address(loss_location) AS l
+        ,  * FROM loss_address
+  )
+
+ SELECT claim_id, regexp_replace(value, '^([0-9]*) to ([0-9]*)', '\1-\2'), value
+ FROM  loss_detail AS add
+ WHERE value  ~* '^[0-9]* to [0-9]* ';
+
+
+#+end_src
+
+#+RESULTS:
+| claim_id | regexp_replace                                         | value                                                     |
+|----------+--------------------------------------------------------+-----------------------------------------------------------|
+|    35598 | 19201-19282 Fairway Drive 6001 to 6298 Greenside Drive | 19201 to 19282 Fairway Drive 6001 to 6298 Greenside Drive |
+|    35816 | 19201-19282 Fairway Drive 6001 to 6298 Greenside Drive | 19201 to 19282 Fairway Drive 6001 to 6298 Greenside Drive |
+|    36509 | 138-150 15 Street West                                 | 138 to 150 15 Street West                                 |
+|    37193 | 5520-5538 Joyce Street                                 | 5520 to 5538 Joyce Street                                 |
+|    37192 | 5520-5538 Joyce Street                                 | 5520 to 5538 Joyce Street                                 |
+|    37859 | 2960-2990 Mariner Way                                  | 2960 to 2990 Mariner Way                                  |
+|    38250 | 9264-9280 122 Street                                   | 9264 to 9280 122 Street                                   |
+|    38249 | 9264-9280 122 Street                                   | 9264 to 9280 122 Street                                   |
+|    38564 | 1243-1247 Homer Street                                 | 1243 to 1247 Homer Street                                 |
+|    39076 | 2960-2990 Mariner Way                                  | 2960 to 2990 Mariner Way                                  |
+|    39936 | 7-145 & 29 to 136 Courntry Hills Gardens N.W           | 7 to 145 & 29 to 136 Courntry Hills Gardens N.W           |
+|    41566 | 5520-5538 Joyce Street                                 | 5520 to 5538 Joyce Street                                 |
+|    41567 | 5520-5538 Joyce Street                                 | 5520 to 5538 Joyce Street                                 |
+|    41568 | 5520-5538 Joyce Street                                 | 5520 to 5538 Joyce Street                                 |
+|    45206 | 2-60 Canterbury Gardens                                | 2 to 60 Canterbury Gardens                                |
+|    45350 | 1-22 Van Horn Court and 105 to 425 Sandford Place      | 1 to 22 Van Horn Court and 105 to 425 Sandford Place      |
+|    45351 | 1-22 Van Horn Court and 105 to 425 Sandford Place      | 1 to 22 Van Horn Court and 105 to 425 Sandford Place      |
+|    45773 | 4728-4738 54A Avenue                                   | 4728 to 4738 54A Avenue                                   |
+|    46725 | 3015-3057 Carina Place                                 | 3015 to 3057 Carina Place                                 |
+|    46724 | 3015-3057 Carina Place                                 | 3015 to 3057 Carina Place                                 |
+|    46915 | 500-540 Stewart Avenue                                 | 500 to 540 Stewart Avenue                                 |
+|    47482 | 12148-12150 224th Street                               | 12148 to 12150 224th Street                               |
+|    47481 | 12148-12150 224th Street                               | 12148 to 12150 224th Street                               |
+|    48228 | 7705-7735 Boul Arthur Sauve                            | 7705 to 7735 Boul Arthur Sauve                            |
+|    51924 | 3055-3091 268th Street                                 | 3055 to 3091 268th Street                                 |
+|    51923 | 3055-3091 268th Street                                 | 3055 to 3091 268th Street                                 |
+|    51922 | 3055-3091 268th Street                                 | 3055 to 3091 268th Street                                 |
+|    52996 | 6-18 John Street                                       | 6 to 18 John Street                                       |
+
+#+begin_src sql
+SELECT postal_parse('555-570 postal ave, Vancouver, BC, CA');
+#+end_src
+#+RESULTS:
+| postal_parse                                                                                           |
+|--------------------------------------------------------------------------------------------------------|
+| {"city": "vancouver", "road": "postal ave", "state": "bc", "country": "ca", "house_number": "555-570"} |
+
+** Parser labels
+ The address parser can technically use any string labels that are defined in the
+ training data, but these are the ones currently defined, based on the fields
+ defined in OpenCage's address-formatting library, as well as a few added by
+ libpostal to handle specific patterns:
+
+  - house :: venue name e.g. "Brooklyn Academy of Music", and building names e.g.
+             "Empire State Building"
+  - category :: for category queries like "restaurants", etc.
+  - near :: phrases like "in", "near", etc. used after a category phrase to help
+            with parsing queries like "restaurants in Brooklyn"
+  - house_number :: usually refers to the external (street-facing) building
+                    number. In some countries this may be a compount, hyphenated
+                    number which also includes an apartment number, or a block
+                    number (a la Japan), but libpostal will just call it the
+                    house_number for simplicity.
+  - road :: street name(s)
+  - unit :: an apartment, unit, office, lot, or other secondary unit designator
+  - level :: expressions indicating a floor number e.g. "3rd Floor", "Ground
+             Floor", etc.
+  - staircase :: numbered/lettered staircase
+  - entrance :: numbered/lettered entrance
+  - po_box :: post office box: typically found in non-physical (mail-only)
+              addresses
+  - postcode :: postal codes used for mail sorting
+  - suburb :: usually an unofficial neighborhood name like "Harlem", "South
+              Bronx", or "Crown Heights"
+  - city_district :: these are usually boroughs or districts within a city that
+    serve some official purpose e.g. "Brooklyn" or "Hackney" or "Bratislava IV"
+  - city :: any human settlement including cities, towns, villages, hamlets,
+            localities, etc.
+  - island :: named islands e.g. "Maui"
+  - state_district :: usually a second-level administrative division or county.
+  - state :: a first-level administrative division. Scotland, Northern Ireland,
+             Wales, and England in the UK are mapped to "state" as well
+             (convention used in OSM, GeoPlanet, etc.)
+  - country_region :: informal subdivision of a country without any political status
+  - country :: sovereign nations and their dependent territories, anything with
+               an ISO-3166 code.
+  - world_region :: currently only used for appending “West Indies” after the
+                    country name, a pattern frequently used in the
+                    English-speaking Caribbean e.g. “Jamaica, West Indies”
+
+ 
+     
+* address.sql
+
+#+BEGIN_SRC sql :tangle "../sql/address.sql" :noweb yes
+<<address-country-table>>
+
+<<address-country-insert>>
+
+<<address-province-table>>
+
+<<address-province-insert>>
+
+<<address-table>>
+
+<<parse_address_to_json>>
+#+END_SRC
+
+#+SETUPFILE: include.org
+
+#+BEGIN_SRC sql
+\d address
+#+END_SRC
+
+#+RESULTS:
+
+* Physical Address 
+
+Things have addresses. We store all addresses in one spot.
+
+** The address table
+ #+NAME: address-table
+ #+BEGIN_SRC sql
+ CREATE TABLE address (
+   id SERIAL PRIMARY KEY, 
+   line1 TEXT, 
+   line2 TEXT, 
+   city TEXT, 
+   province VARCHAR(2),
+   postal_code TEXT,
+   country VARCHAR(2) REFERENCES country(code) DEFAULT 'CA',
+   FOREIGN KEY (province, country) REFERENCES province(code, country)
+ );
+ #+END_SRC
+
+ #+RESULTS: address-table
+ | CREATE TABLE |
+ |--------------|
+
+
+ #+BEGIN_SRC sql
+ INSERT INTO address(line1, city, province, country, postal_code) 
+  VALUES ('PO Box 293', 'Bowen Island', 'BC', 'CA', 'V0N1G0') 
+  RETURNING id;
+ #+END_SRC
+
+ 
+** Parsing Addresses 
+
+#+NAME: parse_address_to_json
+#+BEGIN_SRC sql
+    CREATE OR REPLACE FUNCTION parse_address_to_json(text)
+     RETURNS json LANGUAGE plpgsql AS $$
+     DECLARE
+       arraydress text[] ;
+       arraydress_length INTEGER;
+ 
+       line1 text;
+       line2 text;
+       city text;
+       _province text;
+       two_letter_province TEXT := NULL::text;
+       postal_code text;
+       _country text;
+       two_letter_country TEXT := NULL::text ;
+     BEGIN
+       SELECT regexp_split_to_array($1, ', ') INTO arraydress;      
+       arraydress_length := array_length(arraydress, 1);
+
+       -- '227A OSSINGTON AVENUE, TORONTO, ON, M6J 2Z8, CA'
+       IF (arraydress_length = 5
+           AND char_length(arraydress[3]) = 2) THEN 
+         line1 := arraydress[1];
+         city := arraydress[2];
+         _province := arraydress[3];
+         postal_code := arraydress[4];
+         _country := arraydress[5];
+
+       --  Calgary from 1200, 700-2nd Street SW, Calgary, AB, CA
+        ELSEIF (arraydress_length = 5
+             AND char_length(arraydress[4]) = 2
+             AND char_length(arraydress[5]) = 2) THEN 
+         line1 := arraydress[1];
+         line2 := arraydress[2];
+         city := arraydress[3];
+         _province := arraydress[4];
+         _country := arraydress[5];
+
+       -- 4250 St. Ambroise, unit 416, Montréal, QC, H4C 3R4 
+
+       ELSEIF (arraydress_length = 5
+             AND char_length(arraydress[4]) = 2
+             AND char_length(arraydress[5]) >= 6) THEN 
+         line1 := arraydress[1];
+         line2 := arraydress[2];
+         city := arraydress[3];
+         _province := arraydress[4];
+           postal_code := arraydress[5];
+         _country := 'CA';
+
+
+       --8580 Alexandra Road Unit 2015, 2020 & 2025, Richmond, BC, V6X4B3, CA
+       ELSEIF (arraydress_length = 6) THEN 
+         line1 := arraydress[1];
+         line2 := arraydress[2];
+         city := arraydress[3];
+         _province := arraydress[4];
+         postal_code := arraydress[5];
+         _country := arraydress[6];
+
+
+  
+           -- 122 East Hastings Street, Vancouver, V6A 1N4, CA
+
+        ELSEIF (arraydress_length = 4 
+                AND arraydress[2] = 'Vancouver' 
+                AND char_length(arraydress[3]) != 2) THEN 
+         line1 := arraydress[1];
+         city := arraydress[2];
+         _province := 'BC';
+         postal_code := arraydress[3];
+         _country := arraydress[4];
+
+        -- 1374 Queen Street West, Toronto, M6K 1L7, CA
+
+        ELSEIF (arraydress_length = 4 
+                AND arraydress[2] = 'Toronto' 
+                AND char_length(arraydress[3]) != 2) THEN 
+         line1 := arraydress[1];
+         city := arraydress[2];
+         _province := 'ON';
+         postal_code := arraydress[3];
+         _country := arraydress[4];
+
+        -- 6892 Fremlin Street, Vancouver, BC, v6P 3w4
+
+        ELSEIF (arraydress_length = 4 
+                AND char_length(arraydress[3]) = 2
+                AND (char_length(arraydress[4]) = 7 
+                     OR char_length(arraydress[4]) = 8)) THEN 
+         line1 := arraydress[1];
+         city := arraydress[2];
+         _province := arraydress[3];
+         postal_code := arraydress[4];
+         _country := 'CA';
+
+      -- 3665 Kingsway, Vancouver, BC, CA
+        ELSEIF (arraydress_length = 4 
+               AND char_length(arraydress[3]) = 2
+	       AND char_length(arraydress[4]) = 2) THEN 
+         line1 := arraydress[1];
+         city := arraydress[2];
+         _province := arraydress[3];
+         _country := arraydress[4];
+
+        -- 1344 Commercial Drive, Vancouver, CA
+
+        ELSEIF (arraydress_length = 3 AND arraydress[2] = 'Vancouver') THEN 
+         line1 := arraydress[1];
+         city := arraydress[2];
+         _province := 'BC';
+         _country := arraydress[3];
+
+        -- 'Edmonton, AB, CA', 'Cowichan, BC, CA', 'Nanaimo, BC, CA',
+        -- 'Cultus Lake, BC, CA', 'Labrador City, NL, CA, 
+        -- 'Surrey, BC,CA', 'Kelowna, BC, CA', Windsor, ON, CA
+        -- Sudbury, ON, CA, QEW, Ontario, CA, Ajax, ON, CA
+       -- Fort Lauderdale, FL, USA
+
+        ELSEIF (arraydress_length = 3 
+                AND (arraydress[1] = 'Edmonton'
+                     OR arraydress[1] = 'Fort Lauderdale'
+                     OR arraydress[1] = 'Cowichan' 
+                     OR arraydress[1] = 'Nanaimo' 
+                     OR arraydress[1] = 'Cultus Lake'
+                     OR arraydress[1] = 'Labrador City'
+		     OR arraydress[1] = 'Surrey'
+		     OR arraydress[1] = 'Kelowna'
+		     OR arraydress[1] = 'Windsor'
+		     OR arraydress[1] = 'Sudbury'
+		     OR arraydress[1] = 'QEW'
+                     OR arraydress[1] = 'Ajax')) THEN 
+         city := arraydress[1];
+         _province := arraydress[2];
+         _country := arraydress[3];
+
+  
+        -- BC, CA
+        ELSEIF (arraydress_length = 2 
+                AND char_length(arraydress[1]) = 2 
+                AND char_length(arraydress[2]) = 2) THEN 
+         _province := arraydress[1];
+         _country := arraydress[2];
+
+
+
+       END IF;
+
+ 
+      -- See if the country two letters. If not, try to create it.
+       IF (length(_country) = 2)
+        THEN two_letter_country := _country ;
+        ELSE SELECT code FROM country WHERE name = _country
+             INTO two_letter_country;
+       END IF;
+
+        -- See if the province is two letters. If not, try to create it.
+        IF (( two_letter_country IS NOT NULL) AND (length(_province) = 2))
+         THEN two_letter_province  := _province ;
+         ELSE SELECT code FROM province WHERE name = _province AND country = two_letter_country
+              INTO two_letter_province;
+        END IF;
+
+       -- if there is no province or country, set the country to CA
+        IF (two_letter_country IS NULL) THEN
+         RAISE NOTICE 'Cannot find country using % from "%"', _country, $1;
+        two_letter_country := 'CA';
+        ELSEIF (two_letter_province IS NULL) THEN
+         RAISE EXCEPTION 'Cannot find province using % from %', _province, $1;
+        END IF;
+        RETURN json_build_object(
+            'line1', line1, 'line2', line2,
+            'city', city, 'province', two_letter_province,
+            'postal_code', postal_code, 'country', two_letter_country);
+
+     END; $$;
+ 
+  -- SELECT parse_address_to_json('227A OSSINGTON AVENUE, TORONTO, ON, M6J 2Z8, CA');
+ 
+ 
+#+END_SRC
+
+#+RESULTS:
+| CREATE FUNCTION |
+|-----------------|
+
+
+*** COMMENT libpostal
+:
+https://github.com/openvenues/libpostal
+
+**** Installation
+
+#+BEGIN_SRC sh
+sudo apt-get install curl autoconf automake libtool pkg-config git
+cd /opt/
+sudo git clone https://github.com/openvenues/libpostal
+sudo chown -R $USER libpostal
+cd libpostal
+./bootstrap.sh
+mkdir data-cache
+./configure --datadir="`pwd`/data-cache"
+make
+sudo make install 
+sudo ldconfig
+#+END_SRC
+
+
+**** pgsql-postal
+
+
+ https://github.com/pramsey/pgsql-postal
+
+ #+BEGIN_SRC sh
+ sudo apt-get install postgresql-server-dev-9.4 libpq-dev
+ cd /opt/
+ sudo git clone https://github.com/pramsey/pgsql-postal.git
+ sudo chown -R $USER pgsql-postal
+ cd pgsql-postal/
+ mv postal.c postal.c.orig
+ wget http://raw.githubusercontent.com/openvenues/pgsql-postal/9536d2b98086e6eb3cbfed1cdaabbc34be0447b0/postal.c
+ make
+ sudo make install
+ #+END_SRC
+
+*** COMMENT PostGIS
+
+ PostGIS has a parser that "works" for US and CA, but yeah.
+
+  http://postgis.net/docs/Address_Standardizer.html
+
+**** Install PostGIS
+
+ #+BEGIN_SRC sh
+ sudo apt-get install postgresql-9.4-postgis-2.3\(.*\)
+ #+END_SRC
+
+ trac.osgeo.org/postgis/wiki/UsersWikiPostGIS23UbuntuPGSQL96Apt
+
+**** SQL for address standardizer
+
+ #+BEGIN_SRC sql
+ CREATE EXTENSION address_standardizer;
+ CREATE EXTENSION address_standardizer_data_us;
+ #+END_SRC
+
+** Provinces 
+ http://www12.statcan.gc.ca/census-recensement/2011/ref/dict/table-tableau/table-tableau-8-eng.cfm
+
+
+ |---------------------------+---------------------------------+----|
+ | Newfoundland and Labrador | 	N.L./T.-N.-L.           | NL |
+ | Prince Edward Island      | 	P.E.I./Î.-P.-É.	 | PE |
+ | Nova Scotia	       | N.S./N.-É.                      | NS |
+ | New Brunswick	     | N.B./N.-B.	              | NB |
+ | Quebec	            | Que./Qc	                 | QC |
+ | Ontario	           | Ont./Ont.	               | ON |
+ | Manitoba	          | Man./Man.	               | MB |
+ | Saskatchewan	      | Sask./Sask.	             | SK |
+ | Alberta	           | Alta./Alb.	              | AB |
+ | British Columbia          | 	B.C./C.-B.	      | BC |
+ | Yukon	             | Y.T./Yn	                 | YT |
+ | Northwest Territories     | 	N.W.T./T.N.-O.	  | NT |
+ | Nunavut	           | Nvt./Nt	                 | NU |
+
+ #+NAME: address-province-table
+ #+BEGIN_SRC sql
+ CREATE TABLE province (
+    name text, 
+    code VARCHAR(2),
+    country VARCHAR(2) REFERENCES country(code) DEFAULT 'CA',
+    PRIMARY KEY (code, country)
+ );
+ #+END_SRC
+
+ #+NAME: address-province-insert
+ #+BEGIN_SRC sql
+ INSERT INTO province (name, code, country) 
+  VALUES
+   ('Newfoundland and Labrador', 'NL', 'CA'), 
+   ('Prince Edward Island', 'PE', 'CA'), 
+   ('Nova Scotia', 'NS', 'CA'),
+   ('New Brunswick', 'NB', 'CA'), 
+   ('Quebec', 'QC', 'CA'),
+   ('Ontario', 'ON', 'CA'), 
+   ('Manitoba', 'MB', 'CA'), 
+   ('Saskatchewan', 'SK', 'CA'),
+   ('Alberta', 'AB', 'CA'), 
+   ('British Columbia', 'BC', 'CA'), 
+   ('Yukon', 'YT', 'CA'), 
+   ('Northwest Territories', 'NT', 'CA'), 
+   ('Nunavut', 'NU', 'CA'),
+   ('Florida', 'FL', 'US'),
+   ('Nevada', 'NV', 'US');
+ 
+
+ #+END_SRC
+
+** Countries
+
+ http://data.okfn.org/data/core/country-list#readme
+
+ #+NAME: address-country-table
+ #+BEGIN_SRC sql
+ CREATE TABLE country (
+   name text, 
+   code VARCHAR(2) PRIMARY KEY
+ );
+ #+END_SRC
+
+ #+NAME: address-country-insert
+ #+BEGIN_SRC sql
+
+ INSERT INTO country(name, code) VALUES 
+  ('Afghanistan', 'AF') ,
+   ('Åland Islands', 'AX'),
+   ('Albania', 'AL'),
+   ('Algeria', 'DZ'),
+   ('American Samoa', 'AS'),
+   ('Andorra', 'AD'),
+   ('Angola', 'AO'),
+   ('Anguilla', 'AI'),
+   ('Antarctica', 'AQ'),
+   ('Antigua and Barbuda', 'AG'),
+   ('Argentina', 'AR'),
+   ('Armenia', 'AM'),
+   ('Aruba', 'AW'),
+   ('Australia', 'AU'),
+   ('Austria', 'AT'),
+   ('Azerbaijan', 'AZ'),
+   ('Bahamas', 'BS'),
+   ('Bahrain', 'BH'),
+   ('Bangladesh', 'BD'),
+   ('Barbados', 'BB'),
+   ('Belarus', 'BY'),
+   ('Belgium', 'BE'),
+   ('Belize', 'BZ'),
+   ('Benin', 'BJ'),
+   ('Bermuda', 'BM'),
+   ('Bhutan', 'BT'),
+   ('Bolivia, Plurinational State of', 'BO'),
+   ('Bonaire, Sint Eustatius and Saba', 'BQ'),
+   ('Bosnia and Herzegovina', 'BA'),
+   ('Botswana', 'BW'),
+   ('Bouvet Island', 'BV'),
+   ('Brazil', 'BR'),
+   ('British Indian Ocean Territory', 'IO'),
+   ('Brunei Darussalam', 'BN'),
+   ('Bulgaria', 'BG'),
+   ('Burkina Faso', 'BF'),
+   ('Burundi', 'BI'),
+   ('Cambodia', 'KH'),
+   ('Cameroon', 'CM'),
+   ('Canada', 'CA'),
+   ('Cape Verde', 'CV'),
+   ('Cayman Islands', 'KY'),
+   ('Central African Republic', 'CF'),
+   ('Chad', 'TD'),
+   ('Chile', 'CL'),
+   ('China', 'CN'),
+   ('Christmas Island', 'CX'),
+   ('Cocos (Keeling) Islands', 'CC'),
+   ('Colombia', 'CO'),
+   ('Comoros', 'KM'),
+   ('Congo', 'CG'),
+   ('Congo, the Democratic Republic of the', 'CD'),
+   ('Cook Islands', 'CK'),
+   ('Costa Rica', 'CR'),
+   ('Côte d''Ivoire', 'CI'),
+   ('Croatia', 'HR'),
+   ('Cuba', 'CU'),
+   ('Curaçao', 'CW'),
+   ('Cyprus', 'CY'),
+   ('Czech Republic', 'CZ'),
+   ('Denmark', 'DK'),
+   ('Djibouti', 'DJ'),
+   ('Dominica', 'DM'),
+   ('Dominican Republic', 'DO'),
+   ('Ecuador', 'EC'),
+   ('Egypt', 'EG'),
+   ('El Salvador', 'SV'),
+   ('Equatorial Guinea', 'GQ'),
+   ('Eritrea', 'ER'),
+   ('Estonia', 'EE'),
+   ('Ethiopia', 'ET'),
+   ('Falkland Islands (Malvinas)', 'FK'),
+   ('Faroe Islands', 'FO'),
+   ('Fiji', 'FJ'),
+   ('Finland', 'FI'),
+   ('France', 'FR'),
+   ('French Guiana', 'GF'),
+   ('French Polynesia', 'PF'),
+   ('French Southern Territories', 'TF'),
+   ('Gabon', 'GA'),
+   ('Gambia', 'GM'),
+   ('Georgia', 'GE'),
+   ('Germany', 'DE'),
+   ('Ghana', 'GH'),
+   ('Gibraltar', 'GI'),
+   ('Greece', 'GR'),
+   ('Greenland', 'GL'),
+   ('Grenada', 'GD'),
+   ('Guadeloupe', 'GP'),
+   ('Guam', 'GU'),
+   ('Guatemala', 'GT'),
+   ('Guernsey', 'GG'),
+   ('Guinea', 'GN'),
+   ('Guinea-Bissau', 'GW'),
+   ('Guyana', 'GY'),
+   ('Haiti', 'HT'),
+   ('Heard Island and McDonald Islands', 'HM'),
+   ('Holy See (Vatican City State)', 'VA'),
+   ('Honduras', 'HN'),
+   ('Hong Kong', 'HK'),
+   ('Hungary', 'HU'),
+   ('Iceland', 'IS'),
+   ('India', 'IN'),
+   ('Indonesia', 'ID'),
+   ('Iran, Islamic Republic of', 'IR'),
+   ('Iraq', 'IQ'),
+   ('Ireland', 'IE'),
+   ('Isle of Man', 'IM'),
+   ('Israel', 'IL'),
+   ('Italy', 'IT'),
+   ('Jamaica', 'JM'),
+   ('Japan', 'JP'),
+   ('Jersey', 'JE'),
+   ('Jordan', 'JO'),
+   ('Kazakhstan', 'KZ'),
+   ('Kenya', 'KE'),
+   ('Kiribati', 'KI'),
+   ('Korea, Democratic People''s Republic of', 'KP'),
+   ('Korea, Republic of', 'KR'),
+   ('Kuwait', 'KW'),
+   ('Kyrgyzstan', 'KG'),
+   ('Lao People''s Democratic Republic', 'LA'),
+   ('Latvia', 'LV'),
+   ('Lebanon', 'LB'),
+   ('Lesotho', 'LS'),
+   ('Liberia', 'LR'),
+   ('Libya', 'LY'),
+   ('Liechtenstein', 'LI'),
+   ('Lithuania', 'LT'),
+   ('Luxembourg', 'LU'),
+   ('Macao', 'MO'),
+   ('Macedonia, the Former Yugoslav Republic of', 'MK'),
+   ('Madagascar', 'MG'),
+   ('Malawi', 'MW'),
+   ('Malaysia', 'MY'),
+   ('Maldives', 'MV'),
+   ('Mali', 'ML'),
+   ('Malta', 'MT'),
+   ('Marshall Islands', 'MH'),
+   ('Martinique', 'MQ'),
+   ('Mauritania', 'MR'),
+   ('Mauritius', 'MU'),
+   ('Mayotte', 'YT'),
+   ('Mexico', 'MX'),
+   ('Micronesia, Federated States of', 'FM'),
+   ('Moldova, Republic of', 'MD'),
+   ('Monaco', 'MC'),
+   ('Mongolia', 'MN'),
+   ('Montenegro', 'ME'),
+   ('Montserrat', 'MS'),
+   ('Morocco', 'MA'),
+   ('Mozambique', 'MZ'),
+   ('Myanmar', 'MM'),
+   ('Namibia', 'NA'),
+   ('Nauru', 'NR'),
+   ('Nepal', 'NP'),
+   ('Netherlands', 'NL'),
+   ('New Caledonia', 'NC'),
+   ('New Zealand', 'NZ'),
+   ('Nicaragua', 'NI'),
+   ('Niger', 'NE'),
+   ('Nigeria', 'NG'),
+   ('Niue', 'NU'),
+   ('Norfolk Island', 'NF'),
+   ('Northern Mariana Islands', 'MP'),
+   ('Norway', 'NO'),
+   ('Oman', 'OM'),
+   ('Pakistan', 'PK'),
+   ('Palau', 'PW'),
+   ('Palestine, State of', 'PS'),
+   ('Panama', 'PA'),
+   ('Papua New Guinea', 'PG'),
+   ('Paraguay', 'PY'),
+   ('Peru', 'PE'),
+   ('Philippines', 'PH'),
+   ('Pitcairn', 'PN'),
+   ('Poland', 'PL'),
+   ('Portugal', 'PT'),
+   ('Puerto Rico', 'PR'),
+   ('Qatar', 'QA'),
+   ('Réunion', 'RE'),
+   ('Romania', 'RO'),
+   ('Russian Federation', 'RU'),
+   ('Rwanda', 'RW'),
+   ('Saint Barthélemy', 'BL'),
+   ('Saint Helena, Ascension and Tristan da Cunha', 'SH'),
+   ('Saint Kitts and Nevis', 'KN'),
+   ('Saint Lucia', 'LC'),
+   ('Saint Martin (French part)', 'MF'),
+   ('Saint Pierre and Miquelon', 'PM'),
+   ('Saint Vincent and the Grenadines', 'VC'),
+   ('Samoa', 'WS'),
+   ('San Marino', 'SM'),
+   ('Sao Tome and Principe', 'ST'),
+   ('Saudi Arabia', 'SA'),
+   ('Senegal', 'SN'),
+   ('Serbia', 'RS'),
+   ('Seychelles', 'SC'),
+   ('Sierra Leone', 'SL'),
+   ('Singapore', 'SG'),
+   ('Sint Maarten (Dutch part)', 'SX'),
+   ('Slovakia', 'SK'),
+   ('Slovenia', 'SI'),
+   ('Solomon Islands', 'SB'),
+   ('Somalia', 'SO'),
+   ('South Africa', 'ZA'),
+   ('South Georgia and the South Sandwich Islands', 'GS'),
+   ('South Sudan', 'SS'),
+   ('Spain', 'ES'),
+   ('Sri Lanka', 'LK'),
+   ('Sudan', 'SD'),
+   ('Suriname', 'SR'),
+   ('Svalbard and Jan Mayen', 'SJ'),
+   ('Swaziland', 'SZ'),
+   ('Sweden', 'SE'),
+   ('Switzerland', 'CH'),
+   ('Syrian Arab Republic', 'SY'),
+   ('Taiwan, Province of China', 'TW'),
+   ('Tajikistan', 'TJ'),
+   ('Tanzania, United Republic of', 'TZ'),
+   ('Thailand', 'TH'),
+   ('Timor-Leste', 'TL'),
+   ('Togo', 'TG'),
+   ('Tokelau', 'TK'),
+   ('Tonga', 'TO'),
+   ('Trinidad and Tobago', 'TT'),
+   ('Tunisia', 'TN'),
+   ('Turkey', 'TR'),
+   ('Turkmenistan', 'TM'),
+   ('Turks and Caicos Islands', 'TC'),
+   ('Tuvalu', 'TV'),
+   ('Uganda', 'UG'),
+   ('Ukraine', 'UA'),
+   ('United Arab Emirates', 'AE'),
+   ('United Kingdom', 'GB'),
+   ('United States', 'US'),
+   ('United States Minor Outlying Islands', 'UM'),
+   ('Uruguay', 'UY'),
+   ('Uzbekistan', 'UZ'),
+   ('Vanuatu', 'VU'),
+   ('Venezuela, Bolivarian Republic of', 'VE'),
+   ('Viet Nam', 'VN'),
+   ('Virgin Islands, British', 'VG'),
+   ('Virgin Islands, U.S.', 'VI'),
+   ('Wallis and Futuna', 'WF'),
+   ('Western Sahara', 'EH'),
+   ('Yemen', 'YE'),
+   ('Zambia', 'ZM'),
+   ('Zimbabwe', 'ZW') ;
+ #+END_SRC
+
+
+
+
+
+** address.sql
+
+#+BEGIN_SRC sql :tangle "../sql/address.sql" :noweb yes
+<<address-country-table>>
+
+<<address-country-insert>>
+
+<<address-province-table>>
+
+<<address-province-insert>>
+
+<<address-table>>
+
+<<parse_address_to_json>>
+#+END_SRC

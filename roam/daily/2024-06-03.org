@@ -1,0 +1,7 @@
+:PROPERTIES:
+:ID:       C02468D4-A069-4CF0-8DA6-3ADF859C74B2
+:END:
+#+title: 2024-06-03
+* First Daily Capture!
+
+WIP: ecm-spa make more local.

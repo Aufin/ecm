@@ -1,0 +1,76 @@
+#+TITLE: Currency: Countries differ
+
+#+PROPERTY: header-args:sql :engine postgres :cmdline "\"sslmode=disable host=db.ecm.lan user=maxclaims port=5432 dbname=maxclaims\""
+#+begin_quote
+‘Settlement Currency’ = “CAD” unless insured country is not Canada
+#+end_quote
+
+* The Table
+
+
+#+begin_src sql
+  --DROP TABLE currency;
+  CREATE TABLE IF NOT EXISTS currency(
+   territory TEXT,
+   country TEXT PRIMARY KEY REFERENCES country(code),
+   "from" timestamp,
+   "to" timestamp,
+   currency TEXT,
+   "name" TEXT
+   );
+#+end_src
+
+* Import from CSV/SQL
+
+** CSV
+
+This [[https://gist.github.com/HarishChaudhari/4680482][gist]] helped me import to csv using google sheets.
+
+#+begin_src text
+  =QUERY(IMPORTHTML("https://www.unicode.org/cldr/charts/42/supplemental/detailed_territory_currency_information.html","table",4),"SELECT Col1,Col2,Col3,Col4,Col5,Col6 WHERE Col4='∞'")
+#+end_src
+
+
+#+begin_src sh
+  cp ~/Downloads/Untitled\ spreadsheet\ -\ Sheet1.csv ./currency.csv
+  head -n1 currency.csv 
+  Territory,Code,From,To,Currency,Name
+  head -n2 currency.csv
+  Territory,Code,From,To,Currency,Name
+  Afghanistan,AF,2002-10-07 00:00,∞,AFN,Afghan Afghani
+  cp currency.csv /tmp 
+#+end_src
+
+
+#+RESULTS:
+| CREATE TABLE |
+|--------------|
+| INSERT 0 1   |
+
+#+begin_src sql
+      CREATE TEMPORARY TABLE __currency (
+       territory TEXT,
+       code TEXT,
+       "from" TEXT,
+       "to" TEXT,
+       currency TEXT,
+       "name" TEXT
+       );
+
+
+      COPY __currency FROM '/tmp/currency.csv' DELIMITER ',' CSV HEADER;
+
+      INSERT INTO currency
+      --INSERT INTO country(name, code)
+        SELECT territory, code AS country
+        , "from"::timestamp, NULL::timestamp AS "to", currency, name
+        FROM __currency -- LEFT JOIN country USING (code)
+       --WHERE country.code IS NULL AND territory IS NOT NULL
+      WHERE code IS NOT NULL;
+#+end_src
+
+#+RESULTS:
+| CREATE TABLE |
+|--------------|
+| COPY 274     |
+| INSERT 0 256 |

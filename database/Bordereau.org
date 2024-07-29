@@ -1,0 +1,1357 @@
+#+TITLE: Bordereau: The biggest report in the database
+
+
+#+PROPERTY: header-args:sql :engine postgres :cmdline "\"sslmode=disable host=db.ecm.lan user=maxclaims port=5432 dbname=maxclaims\""
+
+#+begin_src sql
+  src
+
+#+RESULTS:
+| claim_id | count |
+|----------+-------|
+|    36682 |   162 |
+|    38791 |   158 |
+|    39452 |   151 |
+|    38742 |   149 |
+|    39528 |   147 |
+|    39608 |   147 |
+
+#+begin_src sql
+  SELECT claim_id FROM claim_view WHERE (contract).agency_id = 75337;
+#+end_src
+
+#+RESULTS:
+| claim_id |
+|----------|
+|    73566 |
+|    73814 |
+|    73872 |
+|    72860 |
+|    72868 |
+|    73675 |
+|    73589 |
+|    73734 |
+|    73823 |
+
+#+begin_src sql
+    --SELECT * FROM (e
+  --DROP FUNCTION claim_transaction_movement(integer,daterange);
+  CREATE OR REPLACE FUNCTION claim_transaction_movement(claim_id INT, period DATERANGE)
+   RETURNS TABLE(period daterange, claim_id INT, heading TEXT, indemnity BOOLEAN,
+   	       reserve_past NUMERIC, reserve_present NUMERIC, reserve_future NUMERIC,
+   	       limit_of_cover_past NUMERIC, limit_of_cover_present NUMERIC, limit_of_cover_future NUMERIC,
+   	       paid_past NUMERIC, paid_present NUMERIC, paid_future NUMERIC, 
+   	       subrogation_past NUMERIC, subrogation_present NUMERIC, subrogation_future NUMERIC, 
+   	       salvage_past NUMERIC, salvage_present NUMERIC, salvage_future NUMERIC, 
+   	       deductible_past NUMERIC, deductible_present NUMERIC, deductible_future NUMERIC, 
+   	       cash_call_past NUMERIC, cash_call_present NUMERIC, cash_call_future NUMERIC)
+  	       STABLE LANGUAGE SQL AS $$
+   SELECT 
+    period, claim_id, transaction_heading AS heading, indemnity,
+    SUM(CASE WHEN (transaction_type_id < 3 AND transaction_date < lower(period)) THEN amount ELSE 0 END) AS reserve_past,
+    SUM(CASE WHEN (transaction_type_id < 3 AND transaction_date::date <@ period) THEN amount ELSE 0 END) AS reserve_present,
+    SUM(CASE WHEN (transaction_type_id < 3 AND transaction_date >= upper(period)) THEN amount ELSE 0 END) AS reserve_future,
+    SUM(CASE WHEN (transaction_type_id < 3 AND transaction_date < lower(period)) THEN limit_of_cover ELSE 0 END) AS limit_of_cover_past,
+    SUM(CASE WHEN (transaction_type_id < 3 AND transaction_date::date <@ period) THEN limit_of_cover ELSE 0 END) AS limit_of_cover_present,
+    SUM(CASE WHEN (transaction_type_id < 3 AND transaction_date >= upper(period)) THEN limit_of_cover ELSE 0 END) AS limit_of_cover_future,
+    SUM(CASE WHEN (transaction_type_id >= 3 AND transaction_type_id < 6 AND transaction_date < lower(period)) THEN amount ELSE 0 END) AS paid_past,
+    SUM(CASE WHEN (transaction_type_id >= 3 AND transaction_type_id < 6 AND transaction_date::date <@ period) THEN amount ELSE 0 END) AS paid_present,
+    SUM(CASE WHEN (transaction_type_id >= 3 AND transaction_type_id < 6 AND transaction_date >= upper(period)) THEN amount ELSE 0 END) AS paid_future,
+    SUM(CASE WHEN (transaction_type_id = 6 AND transaction_date < lower(period)) THEN amount ELSE 0 END) AS subrogation_past,
+    SUM(CASE WHEN (transaction_type_id = 6 AND transaction_date::date <@ period) THEN amount ELSE 0 END) AS subrogation_present,
+    SUM(CASE WHEN (transaction_type_id = 6 AND transaction_date >= upper(period)) THEN amount ELSE 0 END) AS subrogation_future,
+    SUM(CASE WHEN (transaction_type_id = 7 AND transaction_date < lower(period)) THEN amount ELSE 0 END) AS salvage_past,
+    SUM(CASE WHEN (transaction_type_id = 7 AND transaction_date::date <@ period) THEN amount ELSE 0 END) AS salvage_present,
+    SUM(CASE WHEN (transaction_type_id = 7 AND transaction_date >= upper(period)) THEN amount ELSE 0 END) AS salvage_future,
+    SUM(CASE WHEN (transaction_type_id = 8 AND transaction_date < lower(period)) THEN amount ELSE 0 END) AS deductible_past,
+    SUM(CASE WHEN (transaction_type_id = 8 AND transaction_date::date <@ period) THEN amount ELSE 0 END) AS deductible_present,
+    SUM(CASE WHEN (transaction_type_id = 8 AND transaction_date >= upper(period)) THEN amount ELSE 0 END) AS deductible_future,
+   SUM(CASE WHEN (transaction_type_id = 9 AND transaction_date < lower(period)) THEN amount ELSE 0 END) AS cash_call_past,
+    SUM(CASE WHEN (transaction_type_id = 9 AND transaction_date::date <@ period) THEN amount ELSE 0 END) AS cash_call_present,
+    SUM(CASE WHEN (transaction_type_id = 9 AND transaction_date >= upper(period)) THEN amount ELSE 0 END) AS cash_call_future
+    FROM (SELECT $2 AS period) date, claim_transaction t
+     LEFT JOIN claim_transaction_heading th
+     ON (t.transaction_heading = th.claim_transaction_heading_name)
+
+    WHERE claim_id = $1
+
+    GROUP BY period, claim_id,
+     transaction_heading, indemnity;
+  $$;
+#+end_src
+
+#+RESULTS:
+| DROP FUNCTION   |
+|-----------------|
+| CREATE FUNCTION |
+
+#+begin_src sql
+  SELECT (claim_transaction_movement(claim_id, '[2024-03-01, 2024-04-01)')).* FROM claim_view WHERE (contract).agency_id = 75337
+  ORDER BY claim_id DESC;
+#+end_src
+
+#+RESULTS:
+| period                  | claim_id | heading              | indemnity | reserve_past | reserve_present | reserve_future | limit_of_cover_past | limit_of_cover_present | limit_of_cover_future | paid_past | paid_present | paid_future | subrogation_past | subrogation_present | subrogation_future | salvage_past | salvage_present | salvage_future | deductible_past | deductible_present | deductible_future | cash_call_past | cash_call_present | cash_call_future |
+|-------------------------+----------+----------------------+-----------+--------------+-----------------+----------------+---------------------+------------------------+-----------------------+-----------+--------------+-------------+------------------+---------------------+--------------------+--------------+-----------------+----------------+-----------------+--------------------+-------------------+----------------+-------------------+------------------|
+| [2024-03-01,2024-04-01) |    73872 | TPA                  | f         |            0 |               0 |         625.00 |                   0 |                      0 |                       |         0 |            0 |           0 |                0 |                   0 |                  0 |            0 |               0 |              0 |               0 |                  0 |                 0 |              0 |                 0 |                0 |
+| [2024-03-01,2024-04-01) |    73872 | Adjusting            | f         |            0 |               0 |        1250.00 |                   0 |                      0 |                       |         0 |            0 |           0 |                0 |                   0 |                  0 |            0 |               0 |              0 |               0 |                  0 |                 0 |              0 |                 0 |                0 |
+| [2024-03-01,2024-04-01) |    73872 | Equipment            | t         |            0 |               0 |        2500.00 |                   0 |                      0 |              14500.00 |         0 |            0 |           0 |                0 |                   0 |                  0 |            0 |               0 |              0 |               0 |                  0 |                 0 |              0 |                 0 |                0 |
+| [2024-03-01,2024-04-01) |    73814 | Adjusting            | f         |            0 |               0 |         750.00 |                   0 |                      0 |                       |         0 |            0 |           0 |                0 |                   0 |                  0 |            0 |               0 |              0 |               0 |                  0 |                 0 |              0 |                 0 |                0 |
+| [2024-03-01,2024-04-01) |    73814 | Building             | t         |            0 |               0 |         900.00 |                   0 |                      0 |            2476950.00 |         0 |            0 |           0 |                0 |                   0 |                  0 |            0 |               0 |              0 |               0 |                  0 |                 0 |              0 |                 0 |                0 |
+| [2024-03-01,2024-04-01) |    73814 | TPA                  | f         |            0 |               0 |        1250.00 |                   0 |                      0 |                       |         0 |            0 |           0 |                0 |                   0 |                  0 |            0 |               0 |              0 |               0 |                  0 |                 0 |              0 |                 0 |                0 |
+| [2024-03-01,2024-04-01) |    73675 | TPA                  | f         |            0 |               0 |        1500.00 |                   0 |                      0 |                       |         0 |            0 |           0 |                0 |                   0 |                  0 |            0 |               0 |              0 |               0 |                  0 |                 0 |              0 |                 0 |                0 |
+| [2024-03-01,2024-04-01) |    73675 | Adjusting            | f         |            0 |               0 |        2500.00 |                   0 |                      0 |                       |         0 |            0 |           0 |                0 |                   0 |                  0 |            0 |               0 |              0 |               0 |                  0 |                 0 |              0 |                 0 |                0 |
+| [2024-03-01,2024-04-01) |    73566 | Adjusting            | f         |            0 |               0 |        1800.00 |                   0 |                      0 |                       |         0 |            0 |           0 |                0 |                   0 |                  0 |            0 |               0 |              0 |               0 |                  0 |                 0 |              0 |                 0 |                0 |
+| [2024-03-01,2024-04-01) |    73566 | Building             | t         |            0 |               0 |        3000.00 |                   0 |                      0 |            1039500.00 |         0 |            0 |           0 |                0 |                   0 |                  0 |            0 |               0 |              0 |               0 |                  0 |                 0 |              0 |                 0 |                0 |
+| [2024-03-01,2024-04-01) |    73566 | TPA                  | f         |            0 |               0 |         900.00 |                   0 |                      0 |                       |         0 |            0 |           0 |                0 |                   0 |                  0 |            0 |               0 |              0 |               0 |                  0 |                 0 |              0 |                 0 |                0 |
+| [2024-03-01,2024-04-01) |    72868 | Adjusting            | f         |            0 |         1500.00 |              0 |                   0 |                        |                     0 |         0 |            0 |           0 |                0 |                   0 |                  0 |            0 |               0 |              0 |               0 |                  0 |                 0 |              0 |                 0 |                0 |
+| [2024-03-01,2024-04-01) |    72868 | TPA                  | f         |            0 |         1200.00 |              0 |                   0 |                        |                     0 |         0 |            0 |           0 |                0 |                   0 |                  0 |            0 |               0 |              0 |               0 |                  0 |                 0 |              0 |                 0 |                0 |
+| [2024-03-01,2024-04-01) |    72860 | Rental               | t         |     38500.00 |               0 |      -38500.00 |           192500.00 |                      0 |                     0 |         0 |            0 |           0 |                0 |                   0 |                  0 |            0 |               0 |              0 |               0 |                  0 |                 0 |              0 |                 0 |                0 |
+| [2024-03-01,2024-04-01) |    72860 | TPA                  | f         |      2000.00 |               0 |              0 |                     |                      0 |                     0 |         0 |            0 |           0 |                0 |                   0 |                  0 |            0 |               0 |              0 |               0 |                  0 |                 0 |              0 |                 0 |                0 |
+| [2024-03-01,2024-04-01) |    72860 | Adjusting            | f         |      3500.00 |               0 |        -201.70 |                   0 |                      0 |                     0 |         0 |            0 |     1798.30 |                0 |                   0 |                  0 |            0 |               0 |              0 |               0 |                  0 |                 0 |              0 |                 0 |                0 |
+| [2024-03-01,2024-04-01) |    72860 | Building             | t         |    588000.00 |               0 |     -568000.00 |          2940000.00 |                      0 |                     0 |         0 |            0 |           0 |                0 |                   0 |                  0 |            0 |               0 |              0 |               0 |                  0 |                 0 |              0 |                 0 |                0 |
+| [2024-03-01,2024-04-01) |    72860 | Additional Coverages | t         |     27000.00 |               0 |      -27000.00 |           135000.00 |                      0 |                     0 |         0 |            0 |           0 |                0 |                   0 |                  0 |            0 |               0 |              0 |               0 |                  0 |                 0 |              0 |                 0 |                0 |
+| [2024-03-01,2024-04-01) |    72860 | Expert Expense       | f         |      6000.00 |               0 |       -3911.58 |                   0 |                      0 |                     0 |         0 |            0 |      588.42 |                0 |                   0 |                  0 |            0 |               0 |              0 |               0 |                  0 |                 0 |              0 |                 0 |                0 |
+
+
+#+begin_src sql
+             CREATE OR REPLACE FUNCTION claim_transaction_movement_summary(
+                IN claim_id INT, IN period daterange,
+                OUT claim_id INT, OUT period daterange, OUT indemnity JSON, OUT fee JSON)
+               STABLE LANGUAGE SQL AS $$   
+              SELECT (ctm).claim_id, (ctm).period,
+               (SELECT to_json(suma) FROM
+                  (SELECT
+                    COALESCE(json_object_agg((ctm).heading, (ctm).reserve_past) FILTER (WHERE (ctm).indemnity), '{}'::json) AS reserve_past, 
+               	COALESCE(json_object_agg((ctm).heading, (ctm).reserve_present) FILTER (WHERE (ctm).indemnity), '{}'::json) AS reserve_present, 
+               	COALESCE(json_object_agg((ctm).heading, (ctm).reserve_future) FILTER (WHERE (ctm).indemnity), '{}'::json) AS reserve_future, 
+                    COALESCE(json_object_agg((ctm).heading, (ctm).limit_of_cover_past) FILTER (WHERE (ctm).indemnity), '{}'::json) AS limit_of_cover_past, 
+               	COALESCE(json_object_agg((ctm).heading, (ctm).limit_of_cover_present) FILTER (WHERE (ctm).indemnity), '{}'::json) AS limit_of_cover_present, 
+               	COALESCE(json_object_agg((ctm).heading, (ctm).limit_of_cover_future) FILTER (WHERE (ctm).indemnity), '{}'::json) AS limit_of_cover_future, 
+                	COALESCE(  json_object_agg((ctm).heading, (ctm).paid_past) FILTER (WHERE (ctm).indemnity), '{}'::json) AS paid_past, 
+                	COALESCE(  json_object_agg((ctm).heading, (ctm).paid_present) FILTER (WHERE (ctm).indemnity), '{}'::json) AS paid_present, 
+                	 COALESCE( json_object_agg((ctm).heading, (ctm).paid_future) FILTER (WHERE (ctm).indemnity), '{}'::json) AS paid_future, 
+               	COALESCE(	  json_object_agg((ctm).heading, (ctm).subrogation_past) FILTER (WHERE (ctm).indemnity), '{}'::json) AS subrogation_past, 
+               COALESCE( json_object_agg((ctm).heading, (ctm).subrogation_present) FILTER (WHERE (ctm).indemnity), '{}'::json) AS subrogation_present, 
+              COALESCE(  json_object_agg((ctm).heading, (ctm).subrogation_future) FILTER (WHERE (ctm).indemnity), '{}'::json) AS subrogation_future, 
+              COALESCE(  json_object_agg((ctm).heading, (ctm).salvage_past) FILTER (WHERE (ctm).indemnity), '{}'::json) AS salvage_past, 
+             COALESCE(   json_object_agg((ctm).heading, (ctm).salvage_present) FILTER (WHERE (ctm).indemnity), '{}'::json) AS salvage_present, 
+              COALESCE(  json_object_agg((ctm).heading, (ctm).salvage_future) FILTER (WHERE (ctm).indemnity), '{}'::json) AS salvage_future,
+             COALESCE(   json_object_agg((ctm).heading, (ctm).deductible_past) FILTER (WHERE (ctm).indemnity), '{}'::json) AS deductible_past, 
+             COALESCE(   json_object_agg((ctm).heading, (ctm).deductible_present) FILTER (WHERE (ctm).indemnity), '{}'::json) AS deductible_present, 
+             COALESCE(   json_object_agg((ctm).heading, (ctm).deductible_future) FILTER (WHERE (ctm).indemnity), '{}'::json) AS deductible_future, 
+             COALESCE(   json_object_agg((ctm).heading, (ctm).cash_call_past) FILTER (WHERE (ctm).indemnity), '{}'::json) AS cash_call_past, 
+             COALESCE(   json_object_agg((ctm).heading, (ctm).cash_call_present) FILTER (WHERE (ctm).indemnity), '{}'::json) AS cash_call_present, 
+              COALESCE(  json_object_agg((ctm).heading, (ctm).cash_call_future) FILTER (WHERE (ctm).indemnity), '{}'::json) AS cash_call_future) suma)  AS indemnity,
+        (SELECT to_json(sumb) FROM
+                  (SELECT
+                   COALESCE( json_object_agg((ctm).heading, (ctm).reserve_past) FILTER (WHERE NOT (ctm).indemnity), '{}'::json) AS reserve_past, 
+               	   COALESCE( json_object_agg((ctm).heading, (ctm).reserve_present) FILTER (WHERE NOT (ctm).indemnity), '{}'::json) AS reserve_present, 
+               	   COALESCE( json_object_agg((ctm).heading, (ctm).reserve_future) FILTER (WHERE NOT (ctm).indemnity), '{}'::json) AS reserve_future, 
+                   COALESCE( json_object_agg((ctm).heading, (ctm).limit_of_cover_past) FILTER (WHERE NOT (ctm).indemnity), '{}'::json) AS limit_of_cover_past, 
+               	   COALESCE( json_object_agg((ctm).heading, (ctm).limit_of_cover_present) FILTER (WHERE NOT (ctm).indemnity), '{}'::json) AS limit_of_cover_present, 
+               	   COALESCE( json_object_agg((ctm).heading, (ctm).limit_of_cover_future) FILTER (WHERE NOT (ctm).indemnity), '{}'::json) AS limit_of_cover_future, 
+                	 COALESCE( json_object_agg((ctm).heading, (ctm).paid_past) FILTER (WHERE NOT (ctm).indemnity), '{}'::json) AS paid_past, 
+                	  COALESCE(json_object_agg((ctm).heading, (ctm).paid_present) FILTER (WHERE NOT (ctm).indemnity), '{}'::json) AS paid_present, 
+                	 COALESCE( json_object_agg((ctm).heading, (ctm).paid_future) FILTER (WHERE NOT (ctm).indemnity), '{}'::json) AS paid_future, 
+               	COALESCE(	  json_object_agg((ctm).heading, (ctm).subrogation_past) FILTER (WHERE NOT (ctm).indemnity), '{}'::json) AS subrogation_past, 
+              COALESCE(  json_object_agg((ctm).heading, (ctm).subrogation_present) FILTER (WHERE NOT (ctm).indemnity), '{}'::json) AS subrogation_present, 
+            COALESCE(    json_object_agg((ctm).heading, (ctm).subrogation_future) FILTER (WHERE NOT (ctm).indemnity), '{}'::json) AS subrogation_future, 
+             COALESCE(   json_object_agg((ctm).heading, (ctm).salvage_past) FILTER (WHERE NOT (ctm).indemnity), '{}'::json) AS salvage_past, 
+            COALESCE(    json_object_agg((ctm).heading, (ctm).salvage_present) FILTER (WHERE NOT (ctm).indemnity), '{}'::json) AS salvage_present, 
+           COALESCE(     json_object_agg((ctm).heading, (ctm).salvage_future) FILTER (WHERE NOT (ctm).indemnity), '{}'::json) AS salvage_future,
+          COALESCE(      json_object_agg((ctm).heading, (ctm).deductible_past) FILTER (WHERE NOT (ctm).indemnity), '{}'::json) AS deductible_past, 
+          COALESCE(      json_object_agg((ctm).heading, (ctm).deductible_present) FILTER (WHERE NOT (ctm).indemnity), '{}'::json) AS deductible_present, 
+          COALESCE(      json_object_agg((ctm).heading, (ctm).deductible_future) FILTER (WHERE NOT (ctm).indemnity), '{}'::json) AS deductible_future, 
+          COALESCE(      json_object_agg((ctm).heading, (ctm).cash_call_past) FILTER (WHERE NOT (ctm).indemnity), '{}'::json) AS cash_call_past, 
+         COALESCE(       json_object_agg((ctm).heading, (ctm).cash_call_present) FILTER (WHERE NOT (ctm).indemnity), '{}'::json) AS cash_call_present, 
+         COALESCE(       json_object_agg((ctm).heading, (ctm).cash_call_future) FILTER (WHERE NOT (ctm).indemnity), '{}'::json) AS cash_call_future) sumb)
+        	AS fee
+                FROM (SELECT claim_transaction_movement($1, $2) AS ctm) mov
+                GROUP BY (ctm).claim_id, (ctm).period ;
+            $$;
+
+
+
+#+end_src
+
+#+RESULTS:
+| CREATE FUNCTION |
+|-----------------|
+
+#+begin_src sql
+  COPY (SELECT (claim_transaction_movement(claim_id, '[2024-03-01, 2024-04-01)')).* FROM claim_view WHERE (contract).agency_id = 75337)
+  TO '/tmp/accel-move.csv' CSV DELIMITER ',' HEADER ;
+  
+  COPY (SELECT (claim_transaction_movement_summary(claim_id, '[2024-03-01, 2024-04-01)')).* FROM claim_view WHERE (contract).agency_id = 75337)
+  TO '/tmp/accel-move_summary.csv' CSV DELIMITER ',' HEADER ;
+#+end_src
+#+RESULTS:
+| COPY 21 |
+|---------|
+| COPY 9  |
+
+
+#+RESULTS:
+| claim_id | period                  | fee                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | indemnity                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+|----------+-------------------------a,]---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|    72860 | [2024-03-01,2024-04-01) | {"reserve_past":{ "Adjusting" : 3500.00, "Expert Expense" : 6000.00, "TPA" : 2000.00 },"reserve_present":{ "Adjusting" : 0, "Expert Expense" : 0, "TPA" : 0 },"reserve_future":{ "Adjusting" : -201.70, "Expert Expense" : -3911.58, "TPA" : 0 },"paid_past":{ "Adjusting" : 0, "Expert Expense" : 0, "TPA" : 0 },"paid_present":{ "Adjusting" : 0, "Expert Expense" : 0, "TPA" : 0 },"paid_future":{ "Adjusting" : 1798.30, "Expert Expense" : 588.42, "TPA" : 0 },"subrogation_past":{ "Adjusting" : 0, "Expert Expense" : 0, "TPA" : 0 },"subrogation_present":{ "Adjusting" : 0, "Expert Expense" : 0, "TPA" : 0 },"subrogation_future":{ "Adjusting" : 0, "Expert Expense" : 0, "TPA" : 0 },"salvage_past":{ "Adjusting" : 0, "Expert Expense" : 0, "TPA" : 0 },"salvage_present":{ "Adjusting" : 0, "Expert Expense" : 0, "TPA" : 0 },"salvage_future":{ "Adjusting" : 0, "Expert Expense" : 0, "TPA" : 0 },"deductible_past":{ "Adjusting" : 0, "Expert Expense" : 0, "TPA" : 0 },"deductible_present":{ "Adjusting" : 0, "Expert Expense" : 0, "TPA" : 0 },"deductible_future":{ "Adjusting" : 0, "Expert Expense" : 0, "TPA" : 0 },"cash_call_past":{ "Adjusting" : 0, "Expert Expense" : 0, "TPA" : 0 },"cash_call_present":{ "Adjusting" : 0, "Expert Expense" : 0, "TPA" : 0 },"cash_call_future":{ "Adjusting" : 0, "Expert Expense" : 0, "TPA" : 0 }} | {"reserve_past":{ "Building" : 588000.00, "Additional Coverages" : 27000.00, "Rental" : 38500.00 },"reserve_present":{ "Building" : 0, "Additional Coverages" : 0, "Rental" : 0 },"reserve_future":{ "Building" : -568000.00, "Additional Coverages" : -27000.00, "Rental" : -38500.00 },"paid_past":{ "Building" : 0, "Additional Coverages" : 0, "Rental" : 0 },"paid_present":{ "Building" : 0, "Additional Coverages" : 0, "Rental" : 0 },"paid_future":{ "Building" : 0, "Additional Coverages" : 0, "Rental" : 0 },"subrogation_past":{ "Building" : 0, "Additional Coverages" : 0, "Rental" : 0 },"subrogation_present":{ "Building" : 0, "Additional Coverages" : 0, "Rental" : 0 },"subrogation_future":{ "Building" : 0, "Additional Coverages" : 0, "Rental" : 0 },"salvage_past":{ "Building" : 0, "Additional Coverages" : 0, "Rental" : 0 },"salvage_present":{ "Building" : 0, "Additional Coverages" : 0, "Rental" : 0 },"salvage_future":{ "Building" : 0, "Additional Coverages" : 0, "Rental" : 0 },"deductible_past":{ "Building" : 0, "Additional Coverages" : 0, "Rental" : 0 },"deductible_present":{ "Building" : 0, "Additional Coverages" : 0, "Rental" : 0 },"deductible_future":{ "Building" : 0, "Additional Coverages" : 0, "Rental" : 0 },"cash_call_past":{ "Building" : 0, "Additional Coverages" : 0, "Rental" : 0 },"cash_call_present":{ "Building" : 0, "Additional Coverages" : 0, "Rental" : 0 },"cash_call_future":{ "Building" : 0, "Additional Coverages" : 0, "Rental" : 0 }} |
+|    72868 | [2024-03-01,2024-04-01) | {"reserve_past":{ "TPA" : 0, "Adjusting" : 0 },"reserve_present":{ "TPA" : 1200.00, "Adjusting" : 1500.00 },"reserve_future":{ "TPA" : 0, "Adjusting" : 0 },"paid_past":{ "TPA" : 0, "Adjusting" : 0 },"paid_present":{ "TPA" : 0, "Adjusting" : 0 },"paid_future":{ "TPA" : 0, "Adjusting" : 0 },"subrogation_past":{ "TPA" : 0, "Adjusting" : 0 },"subrogation_present":{ "TPA" : 0, "Adjusting" : 0 },"subrogation_future":{ "TPA" : 0, "Adjusting" : 0 },"salvage_past":{ "TPA" : 0, "Adjusting" : 0 },"salvage_present":{ "TPA" : 0, "Adjusting" : 0 },"salvage_future":{ "TPA" : 0, "Adjusting" : 0 },"deductible_past":{ "TPA" : 0, "Adjusting" : 0 },"deductible_present":{ "TPA" : 0, "Adjusting" : 0 },"deductible_future":{ "TPA" : 0, "Adjusting" : 0 },"cash_call_past":{ "TPA" : 0, "Adjusting" : 0 },"cash_call_present":{ "TPA" : 0, "Adjusting" : 0 },"cash_call_future":{ "TPA" : 0, "Adjusting" : 0 }}                                                                                                                                                                                                                                                                                                                                                                                                                                           | {"reserve_past":null,"reserve_present":null,"reserve_future":null,"paid_past":null,"paid_present":null,"paid_future":null,"subrogation_past":null,"subrogation_present":null,"subrogation_future":null,"salvage_past":null,"salvage_present":null,"salvage_future":null,"deductible_past":null,"deductible_present":null,"deductible_future":null,"cash_call_past":null,"cash_call_present":null,"cash_call_future":null}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+|    73566 | [2024-03-01,2024-04-01) | {"reserve_past":{ "Adjusting" : 0, "TPA" : 0 },"reserve_present":{ "Adjusting" : 0, "TPA" : 0 },"reserve_future":{ "Adjusting" : 1800.00, "TPA" : 900.00 },"paid_past":{ "Adjusting" : 0, "TPA" : 0 },"paid_present":{ "Adjusting" : 0, "TPA" : 0 },"paid_future":{ "Adjusting" : 0, "TPA" : 0 },"subrogation_past":{ "Adjusting" : 0, "TPA" : 0 },"subrogation_present":{ "Adjusting" : 0, "TPA" : 0 },"subrogation_future":{ "Adjusting" : 0, "TPA" : 0 },"salvage_past":{ "Adjusting" : 0, "TPA" : 0 },"salvage_present":{ "Adjusting" : 0, "TPA" : 0 },"salvage_future":{ "Adjusting" : 0, "TPA" : 0 },"deductible_past":{ "Adjusting" : 0, "TPA" : 0 },"deductible_present":{ "Adjusting" : 0, "TPA" : 0 },"deductible_future":{ "Adjusting" : 0, "TPA" : 0 },"cash_call_past":{ "Adjusting" : 0, "TPA" : 0 },"cash_call_present":{ "Adjusting" : 0, "TPA" : 0 },"cash_call_future":{ "Adjusting" : 0, "TPA" : 0 }}                                                                                                                                                                                                                                                                                                                                                                                                                                            | {"reserve_past":{ "Building" : 0 },"reserve_present":{ "Building" : 0 },"reserve_future":{ "Building" : 3000.00 },"paid_past":{ "Building" : 0 },"paid_present":{ "Building" : 0 },"paid_future":{ "Building" : 0 },"subrogation_past":{ "Building" : 0 },"subrogation_present":{ "Building" : 0 },"subrogation_future":{ "Building" : 0 },"salvage_past":{ "Building" : 0 },"salvage_present":{ "Building" : 0 },"salvage_future":{ "Building" : 0 },"deductible_past":{ "Building" : 0 },"deductible_present":{ "Building" : 0 },"deductible_future":{ "Building" : 0 },"cash_call_past":{ "Building" : 0 },"cash_call_present":{ "Building" : 0 },"cash_call_future":{ "Building" : 0 }}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+|    73675 | [2024-03-01,2024-04-01) | {"reserve_past":{ "Adjusting" : 0, "TPA" : 0 },"reserve_present":{ "Adjusting" : 0, "TPA" : 0 },"reserve_future":{ "Adjusting" : 2500.00, "TPA" : 1500.00 },"paid_past":{ "Adjusting" : 0, "TPA" : 0 },"paid_present":{ "Adjusting" : 0, "TPA" : 0 },"paid_future":{ "Adjusting" : 0, "TPA" : 0 },"subrogation_past":{ "Adjusting" : 0, "TPA" : 0 },"subrogation_present":{ "Adjusting" : 0, "TPA" : 0 },"subrogation_future":{ "Adjusting" : 0, "TPA" : 0 },"salvage_past":{ "Adjusting" : 0, "TPA" : 0 },"salvage_present":{ "Adjusting" : 0, "TPA" : 0 },"salvage_future":{ "Adjusting" : 0, "TPA" : 0 },"deductible_past":{ "Adjusting" : 0, "TPA" : 0 },"deductible_present":{ "Adjusting" : 0, "TPA" : 0 },"deductible_future":{ "Adjusting" : 0, "TPA" : 0 },"cash_call_past":{ "Adjusting" : 0, "TPA" : 0 },"cash_call_present":{ "Adjusting" : 0, "TPA" : 0 },"cash_call_future":{ "Adjusting" : 0, "TPA" : 0 }}                                                                                                                                                                                                                                                                                                                                                                                                                                           | {"reserve_past":null,"reserve_present":null,"reserve_future":null,"paid_past":null,"paid_present":null,"paid_future":null,"subrogation_past":null,"subrogation_present":null,"subrogation_future":null,"salvage_past":null,"salvage_present":null,"salvage_future":null,"deductible_past":null,"deductible_present":null,"deductible_future":null,"cash_call_past":null,"cash_call_present":null,"cash_call_future":null}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+|    73734 | [2024-03-01,2024-04-01) | {"reserve_past":{ "TPA" : 0 },"reserve_present":{ "TPA" : 0 },"reserve_future":{ "TPA" : 112.50 },"paid_past":{ "TPA" : 0 },"paid_present":{ "TPA" : 0 },"paid_future":{ "TPA" : 0 },"subrogation_past":{ "TPA" : 0 },"subrogation_present":{ "TPA" : 0 },"subrogation_future":{ "TPA" : 0 },"salvage_past":{ "TPA" : 0 },"salvage_present":{ "TPA" : 0 },"salvage_future":{ "TPA" : 0 },"deductible_past":{ "TPA" : 0 },"deductible_present":{ "TPA" : 0 },"deductible_future":{ "TPA" : 0 },"cash_call_past":{ "TPA" : 0 },"cash_call_present":{ "TPA" : 0 },"cash_call_future":{ "TPA" : 0 }}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | {"reserve_past":null,"reserve_present":null,"reserve_future":null,"paid_past":null,"paid_present":null,"paid_future":null,"subrogation_past":null,"subrogation_present":null,"subrogation_future":null,"salvage_past":null,"salvage_present":null,"salvage_future":null,"deductible_past":null,"deductible_present":null,"deductible_future":null,"cash_call_past":null,"cash_call_present":null,"cash_call_future":null}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+|    73814 | [2024-03-01,2024-04-01) | {"reserve_past":{ "TPA" : 0, "Adjusting" : 0 },"reserve_present":{ "TPA" : 0, "Adjusting" : 0 },"reserve_future":{ "TPA" : 1250.00, "Adjusting" : 750.00 },"paid_past":{ "TPA" : 0, "Adjusting" : 0 },"paid_present":{ "TPA" : 0, "Adjusting" : 0 },"paid_future":{ "TPA" : 0, "Adjusting" : 0 },"subrogation_past":{ "TPA" : 0, "Adjusting" : 0 },"subrogation_present":{ "TPA" : 0, "Adjusting" : 0 },"subrogation_future":{ "TPA" : 0, "Adjusting" : 0 },"salvage_past":{ "TPA" : 0, "Adjusting" : 0 },"salvage_present":{ "TPA" : 0, "Adjusting" : 0 },"salvage_future":{ "TPA" : 0, "Adjusting" : 0 },"deductible_past":{ "TPA" : 0, "Adjusting" : 0 },"deductible_present":{ "TPA" : 0, "Adjusting" : 0 },"deductible_future":{ "TPA" : 0, "Adjusting" : 0 },"cash_call_past":{ "TPA" : 0, "Adjusting" : 0 },"cash_call_present":{ "TPA" : 0, "Adjusting" : 0 },"cash_call_future":{ "TPA" : 0, "Adjusting" : 0 }}                                                                                                                                                                                                                                                                                                                                                                                                                                            | {"reserve_past":{ "Building" : 0 },"reserve_present":{ "Building" : 0 },"reserve_future":{ "Building" : 900.00 },"paid_past":{ "Building" : 0 },"paid_present":{ "Building" : 0 },"paid_future":{ "Building" : 0 },"subrogation_past":{ "Building" : 0 },"subrogation_present":{ "Building" : 0 },"subrogation_future":{ "Building" : 0 },"salvage_past":{ "Building" : 0 },"salvage_present":{ "Building" : 0 },"salvage_future":{ "Building" : 0 },"deductible_past":{ "Building" : 0 },"deductible_present":{ "Building" : 0 },"deductible_future":{ "Building" : 0 },"cash_call_past":{ "Building" : 0 },"cash_call_present":{ "Building" : 0 },"cash_call_future":{ "Building" : 0 }}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+|    73823 | [2024-03-01,2024-04-01) | {"reserve_past":{ "TPA" : 0 },"reserve_present":{ "TPA" : 0 },"reserve_future":{ "TPA" : 112.50 },"paid_past":{ "TPA" : 0 },"paid_present":{ "TPA" : 0 },"paid_future":{ "TPA" : 0 },"subrogation_past":{ "TPA" : 0 },"subrogation_present":{ "TPA" : 0 },"subrogation_future":{ "TPA" : 0 },"salvage_past":{ "TPA" : 0 },"salvage_present":{ "TPA" : 0 },"salvage_future":{ "TPA" : 0 },"deductible_past":{ "TPA" : 0 },"deductible_present":{ "TPA" : 0 },"deductible_future":{ "TPA" : 0 },"cash_call_past":{ "TPA" : 0 },"cash_call_present":{ "TPA" : 0 },"cash_call_future":{ "TPA" : 0 }}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | {"reserve_past":null,"reserve_present":null,"reserve_future":null,"paid_past":null,"paid_present":null,"paid_future":null,"subrogation_past":null,"subrogation_present":null,"subrogation_future":null,"salvage_past":null,"salvage_present":null,"salvage_future":null,"deductible_past":null,"deductible_present":null,"deductible_future":null,"cash_call_past":null,"cash_call_present":null,"cash_call_future":null}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+|    73872 | [2024-03-01,2024-04-01) | {"reserve_past":{ "Adjusting" : 0, "TPA" : 0 },"reserve_present":{ "Adjusting" : 0, "TPA" : 0 },"reserve_future":{ "Adjusting" : 1250.00, "TPA" : 625.00 },"paid_past":{ "Adjusting" : 0, "TPA" : 0 },"paid_present":{ "Adjusting" : 0, "TPA" : 0 },"paid_future":{ "Adjusting" : 0, "TPA" : 0 },"subrogation_past":{ "Adjusting" : 0, "TPA" : 0 },"subrogation_present":{ "Adjusting" : 0, "TPA" : 0 },"subrogation_future":{ "Adjusting" : 0, "TPA" : 0 },"salvage_past":{ "Adjusting" : 0, "TPA" : 0 },"salvage_present":{ "Adjusting" : 0, "TPA" : 0 },"salvage_future":{ "Adjusting" : 0, "TPA" : 0 },"deductible_past":{ "Adjusting" : 0, "TPA" : 0 },"deductible_present":{ "Adjusting" : 0, "TPA" : 0 },"deductible_future":{ "Adjusting" : 0, "TPA" : 0 },"cash_call_past":{ "Adjusting" : 0, "TPA" : 0 },"cash_call_present":{ "Adjusting" : 0, "TPA" : 0 },"cash_call_future":{ "Adjusting" : 0, "TPA" : 0 }}                                                                                                                                                                                                                                                                                                                                                                                                                                            | {"reserve_past":{ "Equipment" : 0 },"reserve_present":{ "Equipment" : 0 },"reserve_future":{ "Equipment" : 2500.00 },"paid_past":{ "Equipment" : 0 },"paid_present":{ "Equipment" : 0 },"paid_future":{ "Equipment" : 0 },"subrogation_past":{ "Equipment" : 0 },"subrogation_present":{ "Equipment" : 0 },"subrogation_future":{ "Equipment" : 0 },"salvage_past":{ "Equipment" : 0 },"salvage_present":{ "Equipment" : 0 },"salvage_future":{ "Equipment" : 0 },"deductible_past":{ "Equipment" : 0 },"deductible_present":{ "Equipment" : 0 },"deductible_future":{ "Equipment" : 0 },"cash_call_past":{ "Equipment" : 0 },"cash_call_present":{ "Equipment" : 0 },"cash_call_future":{ "Equipment" : 0 }}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+
+#+begin_src sql
+        DROP FUNCTION claim_transaction_movement_bordereau(integer,daterange);
+          CREATE OR REPLACE FUNCTION claim_transaction_movement_bordereau
+             (claim_id INT, period daterange)
+            RETURNS TABLE(claim_id INT,period daterange,
+              indemnity_paid_present NUMERIC,
+              fees_paid_present NUMERIC,
+              tpa_fees_paid_present NUMERIC,
+              adjuster_fees_paid_present NUMERIC,
+              legal_fees_paid_present NUMERIC,
+              expert_fees_paid_present NUMERIC,
+              salvage_present NUMERIC,
+              subrogation_present NUMERIC,
+              deductible_present NUMERIC,
+              cash_call_present NUMERIC,
+               indemnity_reserve_present NUMERIC,
+              fees_reserve_present NUMERIC,
+              tpa_fees_reserve_present NUMERIC,
+              adjuster_fees_reserve_present NUMERIC,
+              legal_fees_reserve_present NUMERIC,
+              expert_fees_reserve_present NUMERIC,
+               indemnity_limit_of_cover_present NUMERIC,
+              fees_limit_of_cover_present NUMERIC,
+              tpa_fees_limit_of_cover_present NUMERIC,
+              adjuster_fees_limit_of_cover_present NUMERIC,
+              legal_fees_limit_of_cover_present NUMERIC,
+              expert_fees_limit_of_cover_present NUMERIC,
+              
+             indemnity_paid_past NUMERIC,
+              fees_paid_past NUMERIC,
+              tpa_fees_paid_past NUMERIC,
+              adjuster_fees_paid_past NUMERIC,
+              legal_fees_paid_past NUMERIC,
+              expert_fees_paid_past NUMERIC,
+              salvage_past NUMERIC,
+              subrogation_past NUMERIC,
+              deductible_past NUMERIC,
+              cash_call_past NUMERIC,
+
+              indemnity_reserve_past NUMERIC,
+              fees_reserve_past NUMERIC,
+              tpa_fees_reserve_past NUMERIC,
+              adjuster_fees_reserve_past NUMERIC,
+              legal_fees_reserve_past NUMERIC,
+              expert_fees_reserve_past NUMERIC,
+              indemnity_limit_of_cover_past NUMERIC,
+              fees_limit_of_cover_past NUMERIC,
+              tpa_fees_limit_of_cover_past NUMERIC,
+              adjuster_fees_limit_of_cover_past NUMERIC,
+              legal_fees_limit_of_cover_past NUMERIC,
+              expert_fees_limit_of_cover_past NUMERIC
+
+
+  )
+            STABLE LANGUAGE SQL AS $$
+
+             SELECT $1, $2,
+             -- The Present Payments and Recoveries
+               CASE WHEN (indemnity->>'paid_present') IS NULL THEN 0
+                ELSE (SELECT COALESCE(sum(value::numeric), 0)
+                        FROM json_each_text((indemnity->'paid_present')))
+                END AS indemnity_paid_present,
+               CASE WHEN (fee->>'paid_present') IS NULL THEN 0
+                ELSE (SELECT COALESCE(sum(value::numeric))
+                        FROM json_each_text((fee->'paid_present')))
+                END AS fees_paid_present,
+              COALESCE(((fee->'paid_present')->>'TPA')::numeric, 0)
+               AS tpa_fees_paid_present,
+              COALESCE(((fee->'paid_present')->>'Adjusting')::numeric, 0)
+               AS adjuster_fees_paid_present,
+              COALESCE(((fee->'paid_present')->>'Legal')::numeric, 0)
+               AS legal_fees_paid_present,
+              COALESCE(((fee->'paid_present')->>'Expert Expense')::numeric, 0)
+               AS expert_fees_paid_present,
+               
+              (SELECT CASE WHEN (fee->>'salvage_present') IS NULL THEN 0
+               ELSE (SELECT COALESCE( sum(value::numeric), 0)
+                       FROM json_each_text((fee->'salvage_present')))
+               END 
+              + 
+              CASE WHEN (indemnity->>'salvage_present') IS NULL THEN 0
+               ELSE (SELECT COALESCE( sum(value::numeric), 0)
+                       FROM json_each_text((fee->'salvage_present')))
+              END) AS salvage_present,
+
+             (SELECT CASE WHEN (fee->>'subrogation_present') IS NULL THEN 0
+               ELSE (SELECT COALESCE(sum(value::numeric), 0)
+                       FROM json_each_text((fee->'subrogation_present')))
+               END 
+              + 
+              CASE WHEN (indemnity->>'subrogation_present') IS NULL THEN 0
+               ELSE (SELECT COALESCE( sum(value::numeric), 0)
+                       FROM json_each_text((fee->'subrogation_present')))
+              END) AS subrogation_present,
+
+              (SELECT CASE WHEN (fee->>'deductible_present') IS NULL THEN 0
+               ELSE (SELECT COALESCE(  sum(value::numeric), 0)
+                       FROM json_each_text((fee->'deductible_present')))
+               END
+              + 
+              CASE WHEN (indemnity->>'deductible_present') IS NULL THEN 0
+               ELSE (SELECT COALESCE( sum(value::numeric), 0)
+                       FROM json_each_text((fee->'deductible_present')))
+              END) AS deductible_present,
+             (SELECT CASE WHEN (fee->>'cash_call_present') IS NULL THEN 0
+               ELSE (SELECT COALESCE( sum(value::numeric), 0)
+                       FROM json_each_text((fee->'cash_call_present')))
+               END
+              + 
+              CASE WHEN (indemnity->>'cash_call_present') IS NULL THEN 0
+               ELSE (SELECT COALESCE( sum(value::numeric), 0)
+                       FROM json_each_text((fee->'cash_call_present')))
+              END) AS cash_call_present,
+
+
+           --
+        -- The Present Reserves
+
+               CASE WHEN (indemnity->>'reserve_present') IS NULL THEN 0
+                ELSE (SELECT COALESCE( sum(value::numeric), 0)
+                        FROM json_each_text((indemnity->'reserve_present')))
+                END AS indemnity_reserve_present,
+               CASE WHEN (fee->>'reserve_present') IS NULL THEN 0
+                ELSE (SELECT COALESCE(  sum(value::numeric), 0)
+                        FROM json_each_text((fee->'reserve_present')))
+                END AS fees_reserve_present,
+              COALESCE(((fee->'reserve_present')->>'TPA')::numeric, 0)
+               AS tpa_fees_reserve_present,
+              COALESCE(((fee->'reserve_present')->>'Adjusting')::numeric, 0)
+               AS adjuster_fees_reserve_present,
+              COALESCE(((fee->'reserve_present')->>'Legal')::numeric, 0)
+               AS legal_fees_reserve_present,
+              COALESCE(((fee->'reserve_present')->>'Expert Expense')::numeric, 0)
+               AS expert_fees_reserve_present,
+
+           -- The Present limits
+              CASE WHEN (indemnity->>'limit_of_cover_present') IS NULL THEN 0
+                ELSE (SELECT COALESCE( sum(value::numeric), 0)
+                        FROM json_each_text((indemnity->'limit_of_cover_present')))
+                END AS indemnity_limit_of_cover_present,
+               CASE WHEN (fee->>'limit_of_cover_present') IS NULL THEN 0
+                ELSE (SELECT COALESCE(  sum(value::numeric), 0)
+                        FROM json_each_text((fee->'limit_of_cover_present')))
+                END AS fees_limit_of_cover_present,
+              COALESCE(((fee->'limit_of_cover_present')->>'TPA')::numeric, 0)
+               AS tpa_fees_limit_of_cover_present,
+              COALESCE(((fee->'limit_of_cover_present')->>'Adjusting')::numeric, 0)
+               AS adjuster_fees_limit_of_cover_present,
+              COALESCE(((fee->'limit_of_cover_present')->>'Legal')::numeric, 0)
+               AS legal_fees_limit_of_cover_present,
+              COALESCE(((fee->'limit_of_cover_present')->>'Expert Expense')::numeric, 0)
+               AS expert_fees_limit_of_cover_present,
+
+          -- The Past Payments and Recoveries
+               CASE WHEN (indemnity->>'paid_past') IS NULL THEN 0
+                ELSE (SELECT COALESCE( sum(value::numeric), 0)
+                        FROM json_each_text((indemnity->'paid_past')))
+                END AS indemnity_paid_past,
+               CASE WHEN (fee->>'paid_past') IS NULL THEN 0
+                ELSE (SELECT COALESCE( sum(value::numeric), 0)
+                        FROM json_each_text((fee->'paid_past')))
+                END AS fees_paid_past,
+              COALESCE(((fee->'paid_past')->>'TPA')::numeric, 0)
+               AS tpa_fees_paid_past,
+              COALESCE(((fee->'paid_past')->>'Adjusting')::numeric, 0)
+               AS adjuster_fees_paid_past,
+              COALESCE(((fee->'paid_past')->>'Legal')::numeric, 0)
+               AS legal_fees_paid_past,
+              COALESCE(((fee->'paid_past')->>'Expert Expense')::numeric, 0)
+               AS expert_fees_paid_past,
+               
+              (SELECT CASE WHEN (fee->>'salvage_past') IS NULL THEN 0
+               ELSE (SELECT COALESCE( sum(value::numeric), 0)
+                       FROM json_each_text((fee->'salvage_past')))
+               END 
+              + 
+              CASE WHEN (indemnity->>'salvage_past') IS NULL THEN 0
+               ELSE (SELECT COALESCE(  sum(value::numeric), 0)
+                       FROM json_each_text((fee->'salvage_past')))
+              END) AS salvage_past,
+
+             (SELECT CASE WHEN (fee->>'subrogation_past') IS NULL THEN 0
+               ELSE (SELECT COALESCE( sum(value::numeric), 0)
+                       FROM json_each_text((fee->'subrogation_past')))
+               END 
+              + 
+              CASE WHEN (indemnity->>'subrogation_past') IS NULL THEN 0
+               ELSE (SELECT COALESCE(sum(value::numeric), 0)
+                       FROM json_each_text((fee->'subrogation_past')))
+              END) AS subrogation_past,
+
+             (SELECT CASE WHEN (fee->>'deductible_past') IS NULL THEN 0
+               ELSE (SELECT COALESCE(sum(value::numeric), 0)
+                       FROM json_each_text((fee->'deductible_past')))
+               END
+              + 
+              CASE WHEN (indemnity->>'deductible_past') IS NULL THEN 0
+               ELSE (SELECT COALESCE(sum(value::numeric), 0)
+                       FROM json_each_text((fee->'deductible_past')))
+              END) AS deductible_past,
+
+            (SELECT CASE WHEN (fee->>'cash_call_past') IS NULL THEN 0
+               ELSE (SELECT COALESCE(sum(value::numeric), 0)
+                       FROM json_each_text((fee->'cash_call_past')))
+               END
+              + 
+              CASE WHEN (indemnity->>'cash_call_past') IS NULL THEN 0
+               ELSE (SELECT COALESCE(sum(value::numeric), 0)
+                       FROM json_each_text((fee->'cash_call_past')))
+              END) AS cash_call_past,
+
+
+            --
+        -- The Past Reserves
+
+               CASE WHEN (indemnity->>'reserve_past') IS NULL THEN 0
+                ELSE (SELECT COALESCE( sum(value::numeric), 0)
+                        FROM json_each_text((indemnity->'reserve_past')))
+                END AS indemnity_reserve_past,
+               CASE WHEN (fee->>'reserve_past') IS NULL THEN 0
+                ELSE (SELECT COALESCE(sum(value::numeric), 0)
+                        FROM json_each_text((fee->'reserve_past')))
+                END AS fees_reserve_past,
+              COALESCE(((fee->'reserve_past')->>'TPA')::numeric, 0)
+               AS tpa_fees_reserve_past,
+              COALESCE(((fee->'reserve_past')->>'Adjusting')::numeric, 0)
+               AS adjuster_fees_reserve_past,
+              COALESCE(((fee->'reserve_past')->>'Legal')::numeric, 0)
+               AS legal_fees_reserve_past,
+              COALESCE(((fee->'reserve_past')->>'Expert Expense')::numeric, 0)
+               AS expert_fees_reserve_past,
+             -- The Past limits
+
+               CASE WHEN (indemnity->>'limit_of_cover_past') IS NULL THEN 0
+                ELSE (SELECT COALESCE( sum(value::numeric), 0)
+                        FROM json_each_text((indemnity->'limit_of_cover_past')))
+                END AS indemnity_limit_of_cover_past,
+               CASE WHEN (fee->>'limit_of_cover_past') IS NULL THEN 0
+                ELSE (SELECT COALESCE(sum(value::numeric), 0)
+                        FROM json_each_text((fee->'limit_of_cover_past')))
+                END AS fees_limit_of_cover_past,
+              COALESCE(((fee->'limit_of_cover_past')->>'TPA')::numeric, 0)
+               AS tpa_fees_limit_of_cover_past,
+              COALESCE(((fee->'limit_of_cover_past')->>'Adjusting')::numeric, 0)
+               AS adjuster_fees_limit_of_cover_past,
+              COALESCE(((fee->'limit_of_cover_past')->>'Legal')::numeric, 0)
+               AS legal_fees_limit_of_cover_past,
+              COALESCE(((fee->'limit_of_cover_past')->>'Expert Expense')::numeric, 0)
+               AS expert_fees_limit_of_cover_past
+
+
+             FROM  (SELECT (claim_transaction_movement_summary($1, $2)).*) ;
+
+        $$;
+
+
+
+#+end_src
+
+#+RESULTS:
+| DROP FUNCTION   |
+|-----------------|
+| CREATE FUNCTION |
+
+#+begin_src sql
+  --    COPY (
+    SELECT * FROM (SELECT (claim_transaction_movement_bordereau(claim_id, daterange('2024-04-01', '2024-05-01'))).*
+         FROM claim WHERE status = 'Open' ORDER BY claim_id DESC LIMIT 2) bdx WHERE claim_id IS NOT NULL
+ -- ) TO '/tmp/tran-bdx.csv' DELIMITER ',' CSV HEADER;
+#+end_src
+#+RESULTS:
+| COPY 4056 |
+|-----------|
+
+#+begin_src sql
+  (SELECT (claim_transaction_movement_bordereau(claim_id, daterange('2024-04-01', '2024-05-01'))).*
+         FROM claim WHERE status = 'Open' AND claim_id = 1234 ORDER BY claim_id DESC LIMIT 2)
+#+end_src
+
+#+RESULTS:
+| claim_id | period                  | indemnity_paid_present | fees_paid_present | tpa_fees_paid_present | adjuster_fees_paid_present | legal_fees_paid_present | expert_fees_paid_present | salvage_present | subrogation_present | deductible_present | cash_call_present | indemnity_reserve_present | fees_reserve_present | tpa_fees_reserve_present | adjuster_fees_reserve_present | legal_fees_reserve_present | expert_fees_reserve_present | indemnity_limit_of_cover_present | fees_limit_of_cover_present | tpa_fees_limit_of_cover_present | adjuster_fees_limit_of_cover_present | legal_fees_limit_of_cover_present | expert_fees_limit_of_cover_present | indemnity_paid_past | fees_paid_past | tpa_fees_paid_past | adjuster_fees_paid_past | legal_fees_paid_past | expert_fees_paid_past | salvage_past | subrogation_past | deductible_past | cash_call_past | indemnity_reserve_past | fees_reserve_past | tpa_fees_reserve_past | adjuster_fees_reserve_past | legal_fees_reserve_past | expert_fees_reserve_past | indemnity_limit_of_cover_past | fees_limit_of_cover_past | tpa_fees_limit_of_cover_past | adjuster_fees_limit_of_cover_past | legal_fees_limit_of_cover_past | expert_fees_limit_of_cover_past |
+|----------+-------------------------+------------------------+-------------------+-----------------------+----------------------------+-------------------------+--------------------------+-----------------+---------------------+--------------------+-------------------+---------------------------+----------------------+--------------------------+-------------------------------+----------------------------+-----------------------------+----------------------------------+-----------------------------+---------------------------------+--------------------------------------+-----------------------------------+------------------------------------+---------------------+----------------+--------------------+-------------------------+----------------------+-----------------------+--------------+------------------+-----------------+----------------+------------------------+-------------------+-----------------------+----------------------------+-------------------------+--------------------------+-------------------------------+--------------------------+------------------------------+-----------------------------------+--------------------------------+---------------------------------|
+|     1234 | [2024-04-01,2024-05-01) |                      0 |                 0 |                     0 |                          0 |                       0 |                        0 |               0 |                   0 |                  0 |                 0 |                         0 |                    0 |                        0 |                             0 |                          0 |                           0 |                                0 |                           0 |                               0 |                                    0 |                                 0 |                                  0 |            20747.19 |           2.00 |                  0 |                       0 |                    0 |                     0 |            0 |                0 |               0 |              0 |               22326.66 |           3040.00 |               3000.00 |                          0 |                       0 |                        0 |                         80.77 |                     1.00 |                            0 |                                 0 |                              0 |                               0 |
+
+#+begin_src sql
+  \d pg_proc
+#+end_src
+
+| Table "pg_catalog.pg_proc"                                                                     |              |           |          |         |
+|------------------------------------------------------------------------------------------------+--------------+-----------+----------+---------|
+| Column                                                                                         | Type         | Collation | Nullable | Default |
+| oid                                                                                            | oid          |           | not null |         |
+| proname                                                                                        | name         |           | not null |         |
+| pronamespace                                                                                   | oid          |           | not null |         |
+| proowner                                                                                       | oid          |           | not null |         |
+| prolang                                                                                        | oid          |           | not null |         |
+| procost                                                                                        | real         |           | not null |         |
+| prorows                                                                                        | real         |           | not null |         |
+| provariadic                                                                                    | oid          |           | not null |         |
+| prosupport                                                                                     | regproc      |           | not null |         |
+| prokind                                                                                        | "char"       |           | not null |         |
+| prosecdef                                                                                      | boolean      |           | not null |         |
+| proleakproof                                                                                   | boolean      |           | not null |         |
+| proisstrict                                                                                    | boolean      |           | not null |         |
+| proretset                                                                                      | boolean      |           | not null |         |
+| provolatile                                                                                    | "char"       |           | not null |         |
+| proparallel                                                                                    | "char"       |           | not null |         |
+| pronargs                                                                                       | smallint     |           | not null |         |
+| pronargdefaults                                                                                | smallint     |           | not null |         |
+| prorettype                                                                                     | oid          |           | not null |         |
+| proargtypes                                                                                    | oidvector    |           | not null |         |
+| proallargtypes                                                                                 | oid[]        |           |          |         |
+| proargmodes                                                                                    | "char"[]     |           |          |         |
+| proargnames                                                                                    | text[]       | C         |          |         |
+| proargdefaults                                                                                 | pg_node_tree | C         |          |         |
+| protrftypes                                                                                    | oid[]        |           |          |         |
+| prosrc                                                                                         | text         | C         | not null |         |
+| probin                                                                                         | text         | C         |          |         |
+| prosqlbody                                                                                     | pg_node_tree | C         |          |         |
+| proconfig                                                                                      | text[]       | C         |          |         |
+| proacl                                                                                         | aclitem[]    |           |          |         |
+| Indexes:                                                                                       |              |           |          |         |
+| "pg_proc_oid_index" PRIMARY KEY, btree (oid)                                                   |              |           |          |         |
+| "pg_proc_proname_args_nsp_index" UNIQUE CONSTRAINT, btree (proname, proargtypes, pronamespace) |              |           |          |         |
+
+#+begin_src sql
+  SELECT format('%I.%I(%s)', ns.nspname, p.proname, oidvectortypes(p.proargtypes)) 
+FROM pg_proc p INNER JOIN pg_namespace ns ON (p.pronamespace = ns.oid)
+WHERE ns.nspname = 'jso' and p.proname ILIKE 'bor%' LIMIT 10;
+
+#+end_src
+
+#+RESULTS:
+| format |
+|--------|
+
+#+begin_src sql
+  CREATE OR REPLACE FUNCTION _huh_(record)
+    RETURNS SETOF record LANGUAGE PLPGSQL AS $$
+  DECLARE
+   _rec record;
+   _table text;
+  BEGIN
+
+  _table := pg_typeof($1);
+  return NEXT $1;
+
+  -- FOR _rec IN
+  --   EXECUTE 'SELECT * FROM ' || _table || ' LIMIT 4'
+  --  LOOP
+  --    RETURN NEXT _rec;
+  --  END LOOP;
+   END;
+   $$
+  ;
+
+
+       
+
+#+end_src
+
+#+RESULTS:
+| CREATE FUNCTION |
+|-----------------|
+
+#+begin_src sql
+  -- A Bordereau is a report. Each line is for a claim and it's
+  -- basically the financials for a period.
+
+  -- reports.bdx_from :: The FROM portion of the query
+
+  CREATE TABLE IF NOT EXISTS reports.bdx_from (
+    type TEXT PRIMARY KEY,
+    syntax TEXT
+  );
+
+  INSERT INTO reports.bdx_from(type, syntax)
+   VALUES ('DEFAULT', '(SELECT (claim_transaction_movement_bordereau($1, $2)).*, claim_view
+               FROM claim_view WHERE claim_id = $1) bdx
+              LEFT JOIN claim_ibc_code USING (claim_id)
+              LEFT JOIN ibc_code USING (industry)
+              LEFT JOIN person insured ON (((claim_view).policy).insured_id = person_id)
+              LEFT JOIN currency ON (insured.country = currency.country)
+              LEFT JOIN
+              LATERAL (SELECT person.*
+                          FROM claim_transaction ct
+                          RIGHT JOIN person ON (person_id = ct.payee_id)
+                          WHERE transaction_heading = ''Expert Expense''
+                          AND type LIKE ''Cheque%''
+                          AND payee_id IS NOT NULL
+                          AND transaction_date < upper(bdx.period)
+                          AND ct.claim_id = ((bdx).claim_view).claim_id
+                          ORDER BY transaction_date DESC LIMIT 1)
+                    expert
+              ON TRUE')
+  ON CONFLICT DO NOTHING;
+
+
+
+
+
+  CREATE TABLE IF NOT EXISTS reports.bdx_col_def (
+   "as" TEXT PRIMARY KEY,
+   syntax TEXT
+  );
+
+
+  INSERT INTO reports.bdx_col_def("as", syntax)
+    VALUES
+    ('Field', 'row_number() OVER (ORDER BY claim_id)'),
+    ('Claim', 'claim_id'),
+    ('Start Date', 'lower(period)'), 
+    ('End Date', 'upper(period)')
+    
+  ON CONFLICT DO NOTHING;
+
+  CREATE TABLE IF NOT EXISTS reports.bdx_type (
+   "name" TEXT PRIMARY KEY
+  );
+
+  INSERT INTO reports.bdx_type VALUES ('Accelerant')
+   ON CONFLICT DO NOTHING;
+
+
+  CREATE TABLE IF NOT EXISTS reports.bdx_col (
+    "type" text REFERENCES reports.bdx_type,
+    num int,
+    syntax text,
+    "as" text, 
+    def text references reports.bdx_col_def,
+    PRIMARY KEY ("type", "num", "as")
+  );
+
+  INSERT INTO reports.bdx_col("type", num, syntax, "as", def)
+   VALUES
+     ('Accelerant', 1, '"Field"', 'Field', 'Field'),
+     ('Accelerant', 2, '"Start Date"', 'Reporting Period Start Date', 'Start Date'),
+     ('Accelerant', 3, '"End Date"', 'Reporting Period End Date', 'End Date')
+   ON CONFLICT ("type", "num", "as") DO UPDATE SET def = EXCLUDED.def;
+
+
+  CREATE OR REPLACE FUNCTION reports.bdx_format_bdx_col_def(reports.bdx_col_def)
+  RETURNS TEXT LANGUAGE SQL IMMUTABLE LEAKPROOF STRICT AS $$
+   SELECT format('%s AS %I', $1.syntax, $1."as"); $$;
+
+
+  CREATE OR REPLACE FUNCTION reports.bdx_format_bdx_col(reports.bdx_col)
+  RETURNS TEXT LANGUAGE SQL IMMUTABLE LEAKPROOF STRICT AS $$
+   SELECT format('%I AS %I', $1.def, $1."as"); $$;
+  -- CREATE OR REPLACE FUNCTION reports.bdx_format_body("type" text)
+  -- RETURNS TEXT LANGUAGE SQL IMMUTABLE LEAKPROOF STRICT AS $$
+  --   SELECT 'SELECT ' || string_agg(reports.bdx_format_bdx_col(bc), ',')
+  --   || 'FROM'
+  --   || COALESCE((SELECT syntax FROM reports.bdx_from WHERE "type" = $1)
+  --               ,(SELECT syntax FROM reports.bdx_from
+  --                  WHERE "type" = 'DEFAULT'))
+  --   FROM reports.bdx_col bc WHERE "type" = $1
+  --  ORDER BY num;
+  -- $$;
+   
+
+  CREATE OR REPLACE FUNCTION reports.excel_column(col integer)
+  RETURNS text AS
+   $BODY$
+        WITH RECURSIVE t(n, out) AS (
+    SELECT col/26-(col%26=0)::int, chr((col-1)%26 + 65)
+    UNION ALL
+      SELECT n/26-(n%26=0)::int, chr((n-1)%26 + 65) || out FROM t
+      where n>0
+  ) 
+   SELECT out FROM t where n=0;
+  $BODY$
+  LANGUAGE sql IMMUTABLE LEAKPROOF STRICT;
+#+end_src
+
+#+RESULTS:
+| CREATE TABLE    |
+|-----------------|
+| INSERT 0 0      |
+| CREATE TABLE    |
+| INSERT 0 0      |
+| CREATE TABLE    |
+| INSERT 0 0      |
+| CREATE TABLE    |
+| INSERT 0 3      |
+| CREATE FUNCTION |
+| CREATE FUNCTION |
+| CREATE FUNCTION |
+
+
+#+begin_src sql
+  SELECT * FROM reports.bdx_cols WHERE "type" = 'Accelerant' ORDER BY num;
+#+end_src
+#+RESULTS:
+| type       | num | def   | as    |
+|------------+-----+-------+-------|
+| Accelerant |   1 | Field | Field |
+
+#+begin_src sql :results verbatim :wrap src sql
+   SELECT 'SELECT ' || cols || ' FROM
+     (SELECT ' || defs || ' FROM ' || "from" ||') bdx '
+   FROM (SELECT string_agg(col, ',' order by num) AS cols,
+          string_agg(DISTINCT def, ',') AS defs,
+         "from"
+         FROM (SELECT
+        COALESCE(bdx_from.syntax, def_from.syntax) AS "from",
+       reports.bdx_format_bdx_col(bdx_col) AS col,
+        reports.bdx_format_bdx_col_def(bdx_col_def) AS def,
+         num
+        FROM reports.bdx_col
+        LEFT JOIN reports.bdx_col_def ON (bdx_col_def.as = bdx_col.def)
+        LEFT JOIN reports.bdx_from USING ("type")
+        LEFT JOIN reports.bdx_from def_from ON (def_from."type" = 'DEFAULT')
+        WHERE bdx_col."type" = 'Accelerant' 
+        ORDER BY num) bsyn
+
+  GROUP BY "from") bdefs
+
+  -- CREATE OR REPLACE FUNCTION reports.bordereau_syntax()
+#+end_src
+
+#+RESULTS:
+#+begin_src sql
+?column?
+SELECT "Field" AS "Field","Start Date" AS "Reporting Period Start Date","End Date" AS "Reporting Period End Date" FROM
+   (SELECT lower(period) AS "Start Date",row_number() OVER (ORDER BY claim_id) AS "Field",upper(period) AS "End Date" FROM (SELECT (claim_transaction_movement_bordereau($1, $2)).*, claim_view
+             FROM claim_view WHERE claim_id = $1) bdx
+            LEFT JOIN claim_ibc_code USING (claim_id)
+            LEFT JOIN ibc_code USING (industry)
+            LEFT JOIN person insured ON (((claim_view).policy).insured_id = person_id)
+            LEFT JOIN currency ON (insured.country = currency.country)
+            LEFT JOIN
+            LATERAL (SELECT person.*
+                        FROM claim_transaction ct
+                        RIGHT JOIN person ON (person_id = ct.payee_id)
+                        WHERE transaction_heading = 'Expert Expense'
+                        AND type LIKE 'Cheque%'
+                        AND payee_id IS NOT NULL
+                        AND transaction_date < upper(bdx.period)
+                        AND ct.claim_id = ((bdx).claim_view).claim_id
+                        ORDER BY transaction_date DESC LIMIT 1)
+                  expert
+            ON TRUE) bdx 
+#+end_src
+
+#+begin_src sql
+  CREATE OR REPLACE FUNCTION reports.bordereau(options JSON DEFAULT '{}')
+   RETURNS json LANGUAGE PLPGSQL STABLE AS $$
+  DECLARE
+   _type TEXT := 'Accelerant';
+  BEGIN
+
+  IF $2->>'type' IS NOT NULL THEN
+    _type := $2->>'type';
+  END IF;
+
+  
+
+
+   
+#+end_src
+
+#+begin_src sql
+        DROP TABLE "2ca0cc01-8d78-4611-b919-d233fbf14c94";
+        CREATE TABLE "2ca0cc01-8d78-4611-b919-d233fbf14c94" AS 
+           SELECT
+            row_number() OVER (ORDER BY claim_id) AS "Field",
+            lower(period) AS "Start Date",
+            upper(period) AS "End Date",
+            ((claim_view).policy).effective_date::date AS "Policy Effective Date",
+            ((claim_view).policy).expiry_date::date AS "Policy Expiration Date",
+             person_name(((claim_view).contract).agency_id) AS "Coverholder Name",
+            '' AS "Coverholder PIN",
+            'Maxwell Claims Services Inc.' AS "TPA Name",
+            ((claim_view).policy).policy_number AS "Policy",
+            claim_id AS "Claim",
+            ((claim_view).claim).lineage AS "Accelerant Unique Claim Ref",
+            ((claim_view).contract).contract_number AS "Unique Market Reference",
+            '' AS "Agreement No",
+            '' AS "Section Number",
+            ((claim_view).risk).risk_code AS "Lloyd''s Risk Code",
+            ((claim_view).claim).line_of_business AS "Line of Business",
+            ((claim_view).risk).risk_type_name AS "Risk Type",
+            ((claim_view).claim).line_of_business AS "Annual Statement Line of Business",
+            ibc_code.industry AS "Industry Code",
+            -- CASE WHEN ibc_code.industry_classification IS NOT NULL
+            -- 	       AND NOT ibc_code.industry_classification = ''
+            -- 	  THEN  ibc_code.industry_classification || ' - ' ELSE ''
+            -- END || ibc_code.description
+            ibc_code.industry AS "IBC Segment",
+
+            0050 AS "OSFI LOB",
+            'Property' AS "Product",
+            '' AS "Trade",
+            'CAD' AS "Original Currency",
+            currency.currency AS "Settlement Currency",
+            '' AS "Rate of Exchange",
+            ((claim_view).contract).effective_date AS "Risk Inception Date",
+            ((claim_view).contract).expiry_date AS "Risk Expiration Date",
+            '' AS "Period of Cover",
+            'Direct' AS "Type of Insurance (Direct, or Type of RI)",
+            COALESCE(((claim_view).claim).deductible,
+                     ((claim_view).policy).deductible) AS "Deductible Amount",
+            '' AS "Deductible Basis",
+            indemnity_limit_of_cover_present
+               + indemnity_limit_of_cover_past
+               + fees_limit_of_cover_present
+               + fees_limit_of_cover_past
+            AS "Sums Insured Amount",
+            '' AS "Name or Reg No of Aircraft Vehicle, Vessel etc", 
+            '' AS "% Ceded (Reinsurance)",
+            person_name(insured) AS "Insured",
+            insured.province AS "Province",
+            insured.country AS "Insured Country",
+            insured.address1
+              || CASE WHEN insured.address1 IS NOT NULL
+                        AND insured.address2 IS NOT NULL
+                      THEN ', ' END || insured.address2 AS "Insured Address",
+            insured.postal_code AS "Insured Postal Code",
+            '' AS "Location ID" ,
+            '' AS "Risk Address",
+            '' AS "Risk Province",
+            '' AS "Risk Postal Code",
+            (SELECT value FROM loss_detail ld
+                WHERE key = 'Loss Country' AND ld.claim_id = (claim_view).claim_id)
+             AS "Risk Country",
+            (SELECT value FROM loss_detail ld
+              WHERE key = 'Loss Country' AND ld.claim_id = (claim_view).claim_id)
+             AS "Loss Country",
+            (SELECT value FROM loss_detail ld
+              WHERE key = 'Loss Location' AND ld.claim_id = (claim_view).claim_id)
+               AS "Loss Address",
+            (SELECT value FROM loss_detail ld
+                WHERE key = 'Loss Province' AND ld.claim_id = (claim_view).claim_id)
+               AS "Loss Province",
+            (SELECT value FROM loss_detail ld
+                WHERE key = 'Loss Postal Code' AND ld.claim_id = (claim_view).claim_id)
+                AS "Loss Postal Code",
+            '' AS "Loss County",
+            '' AS "State of Filing",
+            person_name(((claim_view).claim).plaintiff_id) AS "Claimant Name",
+            ((claim_view).claim).cause AS "Cause of Loss",
+            (SELECT code || ' - ' || description
+              FROM claim_claim_detail
+              LEFT JOIN claim_detail USING (claim_detail_id)
+              WHERE claim_claim_detail.claim_id = (claim_view).claim_id
+              LIMIT 1)
+             AS "Cause of Loss Code 2",
+               
+            '' AS "Amount Claimed",
+            (SELECT detail_text
+              FROM claim_claim_detail
+              LEFT JOIN claim_detail USING (claim_detail_id)
+              WHERE claim_claim_detail.claim_id = (claim_view).claim_id
+              LIMIT 1)
+             AS "Loss Description",
+            claim_status((claim_view).claim_id) AS "Status",
+            CASE WHEN ((claim_view).claim).denial IS NOT NULL
+                  THEN CASE WHEN ((claim_view).claim).denial
+                        THEN 'Y' ELSE 'N' END
+                  ELSE COALESCE((SELECT value FROM claim_status_detail csd
+                                  WHERE key = 'Denial (Y/N)'
+                                  AND csd.claim_id = (claim_view).claim_id),
+                                'N')
+                  END
+              AS "Denial",
+            ((claim_view).claim).reason_for_denial AS "Reason for Denial",
+            (SELECT value FROM loss_detail ld
+                WHERE key = 'Cat Name' AND ld.claim_id = (claim_view).claim_id)
+              AS "Cat Name",
+            (SELECT value FROM loss_detail ld
+                WHERE key = 'Cat Code' AND ld.claim_id = (claim_view).claim_id)
+              AS "Cat Code",
+            COALESCE((SELECT value FROM claim_status_detail csd
+                                  WHERE key = 'Ex Gratia (Y/N)'
+                                  AND csd.claim_id = (claim_view).claim_id),
+                                'N')
+              AS "Ex Gratia (Y/N)" ,
+            '' AS "Claim not paid as within excess",
+            '' AS "PCS Code",
+            '' AS "Medicare United States Bodily Injury",
+            '' AS "Medicare Eligibility Check Performance",
+            '' AS "Medicare Outcome of Eligilibility Status Check",
+            '' AS "Medicare Conditional Payments",
+            '' AS "Medicare MSP Compliance Services",
+            '' AS "A&H Plan",
+            '' AS "Patient Name",
+            '' AS "Treatment Type",
+            '' AS "Country of Treatment",
+            '' AS "Date of Treatment",
+            '' AS "Expert Role",
+            person_name(expert) AS "Expert Firm / Company Name",
+            '' AS "Expert Reference No etc",
+            expert.address1
+              || CASE WHEN expert.address1 IS NOT NULL
+                        AND expert.address2 IS NOT NULL
+                      THEN ', ' END || expert.address2
+              AS "Expert Address",
+            expert.province
+             AS "Expert State, Province, Territory, Canton etc",
+            expert.postal_code AS "Expert Postal Code",
+            expert.country AS "Expert Country",
+            '' AS "Expert Notes",
+            (claim_view).claim.date_of_loss AS "Date of Loss",
+            '' AS "Date of Loss to",
+            (claim_view).claim.date_claim_made AS "Date Claim Made",
+            (claim_view).claim.open_date AS "Date Claim Opened",
+            CASE WHEN (claim_view).claim.refer_to_underwriters IS NULL
+                  THEN 'N'
+                  WHEN  (claim_view).claim.refer_to_underwriters
+                   THEN 'Y' ELSE 'N' END
+             AS "Refer to Underwriters",
+            (claim_view).claim.close_date AS "Close Date",
+            '' AS "Date Coverage Confirmed",
+            '' AS "Date Claim Amount Agreed",
+            '' AS "Date Claim Paid",
+            '' AS "Date Fees Paid",
+            (claim_view).claim.rev_date::date AS "Date Reopened",
+            '' AS "Date of Subrogation",
+            (claim_view).claim.date_of_denial::date AS "Date Claim Denied",
+            '' AS "Date claim withdrawn",
+            (claim_view).claim.claim_acknowledged_time::date
+                AS "Claim First Notification Acknowledgement Date",
+            (SELECT min(transaction_date)::date
+              FROM claim_transaction ct
+              WHERE transaction_type_id = 1
+                 AND ct.claim_id = (claim_view).claim_id)
+              AS "Date First Reserves Established",
+            (SELECT min(due_date)::date FROM diary d
+              WHERE d.claim_id = (claim_view).claim_id
+              AND NOT processed) AS "Diary Date",
+            (claim_view).claim.peer_reviewed_date::date AS "Peer Review Date",
+            extract('year' from (claim_view).contract.effective_date)
+              AS "Year of Account (YOA)",
+            (claim_view).claim.date_of_loss AS "Accident Date",
+            '' AS "Jurisdiction of the claim",
+            '' AS "General nature of loss" ,
+            '' AS "Body functions or structures affected",
+            '' AS "Severity of loss", 
+            CASE WHEN claim_status((claim_view).claim_id, upper(period))  = 'Open'
+                      AND (legal_fees_paid_past + legal_fees_paid_present) > 0
+                 THEN 'Y' ELSE 'N'
+            END
+              AS "In Litigation (Y/N)",
+            '' AS "Heads of damage – past economic loss",
+            '' AS "Heads of damage – future economic loss",
+            '' AS "Heads of damage - Past medical, hospital",
+            '' AS "Heads of damage - Future medical, hospital" ,
+            '' AS "Heads of damage - Future caring services" ,
+            '' AS "Heads of damage - General damages",
+            '' AS "Heads of damage – Interest",
+            indemnity_paid_present AS "Paid this month - Indemnity",
+            0 AS "Paid this month - Defence Fees",
+            adjuster_fees_paid_present AS "Paid this month - Adjusters Fees",
+            tpa_fees_paid_present AS "Paid this month - TPA Fees" ,
+            legal_fees_paid_present AS "Paid this month - Attorney Coverage Fees",
+            0 AS "Paid this month - Attorney Monitoring Fees",
+            (fees_paid_present
+             - adjuster_fees_paid_present
+             - tpa_fees_paid_present
+             - legal_fees_paid_present)
+              AS "Paid this month - Other Fees and Expenses" ,
+            fees_paid_present + indemnity_paid_present
+              AS "TOTAL PAID MOVEMENTS THIS MONTH" ,
+            salvage_present AS "Salvage Received this Month" ,
+            subrogation_present AS "Recovery Received this Month" ,
+            salvage_present + subrogation_present AS "TOTAL SALVAGE + RECOVERY RECEIVED MOVEMENTS THIS MONTH" ,
+            indemnity_reserve_present AS "Indemnity Reserve movement this month" ,
+            0 AS "Defence Fee Reserve movement this month" ,
+            adjuster_fees_reserve_present AS "Adjuster Fee Reserve Movement this Month" ,
+            tpa_fees_reserve_present  AS "TPA Fee Reserve Movement this Month" ,
+            legal_fees_reserve_present AS "Attorney Coverage Fee Reserve Movement this Month" ,
+            0  AS "Attorney Monitoring Fee Reserve Movement this Month" ,
+             (fees_reserve_present
+             - adjuster_fees_reserve_present
+             - tpa_fees_reserve_present
+             - legal_fees_reserve_present)
+               AS "Other Fee & Expenses Reserve Movement this Month" ,
+            indemnity_reserve_present + fees_reserve_present AS "Total Reserve Movement This Month" ,
+            0 AS "Salvage Reserve Movement this Month" ,
+            0 AS "Recovery Reserve Movement this Month" ,
+            0 AS "Total Salvage & Recovery Reserve Movements this Month" ,
+            indemnity_paid_present + indemnity_reserve_present AS "TOTAL INDEMNITY MOVEMENT THIS MONTH" ,
+            0 AS "TOTAL DEFENCE MOVEMENT THIS MONTH" ,
+             adjuster_fees_paid_present + adjuster_fees_reserve_present AS "TOTAL ADJUSTER FEE MOVEMENT THIS MONTH" ,
+             tpa_fees_paid_present + tpa_fees_reserve_present AS "TOTAL TPA FEE MOVEMENT THIS MONTH" ,
+             legal_fees_paid_present + legal_fees_reserve_present AS "TOTAL ATTORNEY COVERAGE FEE MOVEMENT THIS MONTH"  ,
+             0 AS "TOTAL ATTORNEY MONITORING FEE MOVEMENT THIS MONTH" ,
+             (fees_reserve_present
+             - adjuster_fees_reserve_present
+             - tpa_fees_reserve_present
+             - legal_fees_reserve_present)
+              +  (fees_paid_present
+                - adjuster_fees_paid_present
+                - tpa_fees_paid_present
+                - legal_fees_paid_present)
+              + cash_call_present
+             AS "TOTAL OTHER FEE & RESERVES MOVEMENT THIS MONTH",
+             indemnity_paid_present + fees_paid_present + indemnity_reserve_present + fees_reserve_present + cash_call_present  AS "TOTAL MOVEMENT IN PERIOD",
+             salvage_present + subrogation_present AS "TOTAL SALVAGE AND RECOVERY RECEIVED MOVEMENTS THIS MONTH",
+             indemnity_paid_present + indemnity_paid_past AS "Total Paid To Date - Indemnity",
+             0 AS "Total Paid To Date - Defence Fees",
+             adjuster_fees_paid_present + adjuster_fees_paid_past AS "Total Paid To Date - Adjusters Fees",
+             tpa_fees_paid_present + tpa_fees_paid_past AS "Total Paid To Date - TPA Fees",
+             legal_fees_paid_present + legal_fees_paid_past AS "Total Paid To Date - Attorney Coverage Fees",
+             0 AS "Total Paid To Date - Attorney Monitoring Fees",
+             (fees_paid_present
+             - adjuster_fees_paid_present
+             - tpa_fees_paid_present
+             - legal_fees_paid_present)
+               + (fees_paid_past
+             - adjuster_fees_paid_past
+             - tpa_fees_paid_past
+             - legal_fees_paid_past)
+               AS "Total Paid To Date -  Other Fees and Expenses",
+               indemnity_paid_present + indemnity_paid_past
+                + fees_paid_present + fees_paid_past AS "Total Paid To Date",
+             salvage_present + salvage_past AS "Total Received To Date - Salvage",
+             subrogation_present + subrogation_past AS "Total Received to Date - Recoveries",
+              salvage_present + salvage_past
+              + subrogation_present + subrogation_past AS "Total Received to Date",
+             CASE claim_status((claim_view).claim_id, upper(period))  WHEN 'Closed' THEN 0
+              ELSE indemnity_reserve_present + indemnity_reserve_past END
+              AS "Total Reserved To Date - Indemnity",
+             0 AS "Total Reserved To Date - Defence Fees",
+             CASE claim_status((claim_view).claim_id, upper(period))  WHEN 'Closed' THEN 0
+              ELSE adjuster_fees_reserve_present + adjuster_fees_reserve_past END
+               AS "Total Reserved To Date - Adjusters Fees",
+             CASE claim_status((claim_view).claim_id, upper(period))  WHEN 'Closed' THEN 0
+              ELSE tpa_fees_reserve_present + tpa_fees_reserve_past END
+               AS "Total Reserved To Date - TPA Fees",
+             CASE claim_status((claim_view).claim_id, upper(period))  WHEN 'Closed' THEN 0
+              ELSE legal_fees_reserve_present + legal_fees_reserve_past END
+              AS "Total Reserved To Date - Attorney Coverage Fees" ,
+             0 AS "Total Reserved To Date - Attorney Monitoring Fees"  ,
+             CASE claim_status((claim_view).claim_id, upper(period))  WHEN 'Closed' THEN 0
+              ELSE (fees_reserve_present
+                - adjuster_fees_reserve_present
+                - tpa_fees_reserve_present
+                - legal_fees_reserve_present) +
+                (fees_reserve_past
+                - adjuster_fees_reserve_past
+                - tpa_fees_reserve_past
+                - legal_fees_reserve_past) END
+                AS "Total Reserved To Date - Other Fees and Expenses",
+             CASE claim_status((claim_view).claim_id, upper(period))  WHEN 'Closed' THEN 0
+               ELSE  indemnity_reserve_present + indemnity_reserve_past
+                     + fees_reserve_present + fees_reserve_past
+             END AS "Total To Date - Reserved",
+             0 AS "Reserved to Date - Salvage",
+             0 AS "Reserved to Date - Recoveries" ,
+             0 AS "Total to Date Salvage & Recovery Reserve" ,
+             indemnity_paid_present + indemnity_paid_past
+              + CASE claim_status((claim_view).claim_id, upper(period))
+                  WHEN 'Closed' THEN 0 ELSE
+                   indemnity_reserve_present + indemnity_reserve_past
+                   - (indemnity_paid_present + indemnity_paid_past)
+                END
+               AS "Total Incurred - Indemnity",
+             0 AS "Total Incurred - Defense Fees",
+             adjuster_fees_paid_present + adjuster_fees_paid_past
+              + CASE claim_status((claim_view).claim_id, upper(period))
+                  WHEN 'Closed' THEN 0 ELSE
+                   adjuster_fees_reserve_present + adjuster_fees_reserve_past
+                   - (adjuster_fees_paid_present + adjuster_fees_paid_past)
+                END
+              AS "Total Incurred - Adjusters Fees",
+              tpa_fees_paid_present + tpa_fees_paid_past
+              + CASE claim_status((claim_view).claim_id, upper(period))
+                  WHEN 'Closed' THEN 0 ELSE
+                   tpa_fees_reserve_present + tpa_fees_reserve_past
+                   - (tpa_fees_paid_present + tpa_fees_paid_past)
+                END
+             AS "Total Incurred - TPA Fees",
+             legal_fees_paid_present + legal_fees_paid_past
+              + CASE claim_status((claim_view).claim_id, upper(period))
+                  WHEN 'Closed' THEN 0 ELSE
+                   legal_fees_reserve_present + legal_fees_reserve_past
+                   - (legal_fees_paid_present + legal_fees_paid_past)
+                END
+              AS "Total Incurred - Attorney Coverage Fees",
+             0 AS "Total Incurred - Attorney Monitoring Fees",
+             (fees_paid_present
+             - adjuster_fees_paid_present
+             - tpa_fees_paid_present
+             - legal_fees_paid_present)
+               + (fees_paid_past
+             - adjuster_fees_paid_past
+             - tpa_fees_paid_past
+             - legal_fees_paid_past)
+              + CASE claim_status((claim_view).claim_id, upper(period))
+                  WHEN 'Closed' THEN 0 ELSE
+                  (fees_reserve_present
+                - adjuster_fees_reserve_present
+                - tpa_fees_reserve_present
+                - legal_fees_reserve_present) +
+                (fees_reserve_past
+                - adjuster_fees_reserve_past
+                - tpa_fees_reserve_past
+                - legal_fees_reserve_past)
+                   - ( (fees_paid_present
+             - adjuster_fees_paid_present
+             - tpa_fees_paid_present
+             - legal_fees_paid_present)
+               + (fees_paid_past
+             - adjuster_fees_paid_past
+             - tpa_fees_paid_past
+             - legal_fees_paid_past))
+               END
+              AS "Total Incurred - Other Fees and Expenses",
+              
+             indemnity_paid_past + indemnity_paid_present
+              + fees_paid_past + fees_paid_present
+              + cash_call_past + cash_call_present
+              + CASE claim_status((claim_view).claim_id, upper(period))
+                  WHEN 'Closed' THEN 0 ELSE
+                  indemnity_reserve_past + indemnity_reserve_present
+                   + fees_reserve_past + fees_reserve_present
+                     - (indemnity_paid_past + indemnity_paid_present
+                         + fees_paid_past + fees_paid_present)
+              END
+
+              AS "TOTAL INCURRED EXCLUDING RECOVERIES",
+              salvage_present + salvage_past + subrogation_past + subrogation_present  AS "Total Recoveries Received",
+               indemnity_paid_past + indemnity_paid_present
+              + fees_paid_past + fees_paid_present
+              + cash_call_past + cash_call_present
+               - (salvage_present + salvage_past + subrogation_past + subrogation_present)
+              + CASE claim_status((claim_view).claim_id, upper(period))
+                  WHEN 'Closed' THEN 0 ELSE
+                  indemnity_reserve_past + indemnity_reserve_present
+                   + fees_reserve_past + fees_reserve_present
+                     - (indemnity_paid_past + indemnity_paid_present
+                         + fees_paid_past + fees_paid_present)
+              END
+
+
+              AS "TOTAL INCURRED INCLUDING RECOVERIES",
+             0 AS "Recovery Reserves",
+            deductible_present + deductible_past AS "Excess Received",
+            (SELECT max(transaction_date)::date
+             FROM claim_transaction ct
+              WHERE ct.claim_id = bdx.claim_id AND transaction_type_id = 8)
+            AS "Date Excess Received",
+              (SELECT max(time)::date FROM claim_movement cm WHERE cm.claim_id = bdx.claim_id) AS "Last Update"
+
+
+
+           FROM  (SELECT (claim_transaction_movement_bordereau(claim_id, '[2024-05-01, 2024-06-01)')).*, claim_view
+                  FROM claim_view
+                    WHERE (contract).syndicate_id = 76644 -- OR claim_id = 60626
+                 ) bdx
+                 LEFT JOIN claim_ibc_code USING (claim_id)
+                 LEFT JOIN ibc_code USING (industry)
+                 LEFT JOIN person insured ON (((claim_view).policy).insured_id = person_id)
+                 LEFT JOIN currency ON (insured.country = currency.country)
+                 LEFT JOIN
+                 LATERAL (SELECT person.*
+                             FROM claim_transaction ct
+                             RIGHT JOIN person ON (person_id = ct.payee_id)
+                             WHERE transaction_heading = 'Expert Expense'
+                             AND type LIKE 'Cheque%'
+                             AND payee_id IS NOT NULL
+                             AND transaction_date < upper(bdx.period)
+                             AND ct.claim_id = ((bdx).claim_view).claim_id
+                             ORDER BY transaction_date DESC LIMIT 1)
+                       expert
+                 ON TRUE
+      --) to '/tmp/accel-bdx-kinda.csv' DELIMITER ',' CSV HEADER;
+#+end_src
+
+#+RESULTS:
+| DROP TABLE |
+|------------|
+| SELECT 25  |
+
+#+begin_src sql
+  CREATE OR REPLACE FUNCTION __bdx_error_catcher(INT)
+   RETURNS BOOLEAN LANGUAGE plpgsql AS $$
+   DECLARE
+    _ret BOOLEAN := false;
+    text_var1 TEXT;
+   BEGIN
+    SELECT true INTO _ret FROM
+      (SELECT (claim_transaction_movement_bordereau($1, daterange('2024-04-01', '2024-05-01')))) bdx;
+
+   RETURN _ret;
+
+  EXCEPTION
+   WHEN OTHERS THEN
+   GET STACKED DIAGNOSTICS text_var1 = MESSAGE_TEXT;
+   RAISE EXCEPTION 'Claim % failed : %', $1, text_var1;
+   END;
+
+  $$;
+#+end_src
+
+#+begin_src sql
+  SELECT claim_id FROM claim_transaction WHERE type ILIKE 'Salvage%'  AND transaction_date::Date <@ '[2024-01-01, 2024-05-01)'::daterange
+#+end_src
+#+RESULTS:
+| claim_id |
+|----------|
+|    54441 |
+|    63181 |
+|    62898 |
+|    62899 |
+|    62900 |
+|    70919 |
+|    69347 |
+|    69863 |
+|    66947 |
+|    66948 |
+|    68134 |
+
+#+begin_src sql
+\df claim_transaction_movement
+#+end_src
+
+#+RESULTS:
+| List of functions |                            |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |                                    |      |
+|-------------------+----------------------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+------------------------------------+------|
+| Schema            | Name                       | Result data type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Argument data types                | Type |
+| public            | claim_transaction_movement | TABLE(period daterange, claim_id integer, heading text, indemnity boolean, reserve_past numeric, reserve_present numeric, reserve_future numeric, paid_past numeric, paid_present numeric, paid_future numeric, subrogation_past numeric, subrogation_present numeric, subrogation_future numeric, salvage_past numeric, salvage_present numeric, salvage_future numeric, deductible_past numeric, deductible_present numeric, deductible_future numeric, cash_call_past numeric, cash_call_present numeric, cash_call_future numeric) | claim_id integer, period daterange | func |
+
+#+begin_src sql :results verbatim :wrap src sql
+ \df paid*indem*
+#+end_src
+
+#+begin_src sql
+  SELECT * FROM claim_transaction_type 
+#+end_src
+
+#+RESULTS:
+| claim_transaction_type_id | description              |
+|---------------------------+--------------------------|
+|                         1 | Open Reserve             |
+|                         2 | Reserve Adjustment       |
+|                         3 | Cheque - Loss            |
+|                         4 | Cheque - Expense         |
+|                         5 | Cheque - In House Payout |
+|                         6 | Subrogation              |
+|                         7 | Salvage Recovery         |
+|                         8 | Recovered Deductible     |
+|                         9 | Cash Call/Scheme Advance |
+
+  #+BEGIN_SRC sql :results code :exports none
+  select pg_get_functiondef(oid)||';' AS " "
+  from pg_proc
+  where proname = 'paid_this_period_indemnity';
+  #+END_SRC
+
+  #+RESULTS:
+  #+begin_src sql
+
+  CREATE OR REPLACE FUNCTION public.paid_this_period_indemnity(claim_id integer, start date, _end date)
+   RETURNS numeric
+   LANGUAGE sql
+   STABLE
+  AS $function$
+   SELECT claim_indemnity_paid($1,$3,$2)::money;
+  $function$
+  ;
+  #+end_src
+
+  #+BEGIN_SRC sql :results code :exports none
+  select pg_get_functiondef(oid)||';' AS " "
+  from pg_proc
+  where proname = 'claim_indemnity_paid';
+  #+END_SRC
+
+  #+RESULTS:
+  #+begin_src sql
+
+  CREATE OR REPLACE FUNCTION public.claim_indemnity_paid(claim_id integer, end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone, start_date timestamp without time zone DEFAULT '-infinity'::timestamp without time zone)
+   RETURNS numeric
+   LANGUAGE sql
+   STABLE
+  AS $function$
+  SELECT SUM (claim_paid(heading, $1, $2, $3))
+   FROM UNNEST(claim_transaction_indemnity_headings()) AS heading ;
+
+  $function$
+  ;
+  #+end_src
+
+  #+BEGIN_SRC sql :results code :exports none
+  select pg_get_functiondef(oid)||';' AS " "
+  from pg_proc
+  where proname = 'claim_transaction_indemnity_headings';
+  #+END_SRC
+
+  #+RESULTS:
+  #+begin_src sql
+
+  CREATE OR REPLACE FUNCTION public.claim_transaction_indemnity_headings()
+   RETURNS text[]
+   LANGUAGE sql
+   STABLE
+  AS $function$
+      SELECT ARRAY_AGG(name) FROM claim_transaction_indemnity_heading;
+    $function$
+  ;
+  #+end_src
+
+ #+begin_src sql
+   SELECT * from claim_transaction_indemnity_heading;
+ #+end_src
+
+ #+RESULTS:
+ | name                                 |
+ |--------------------------------------|
+ | Crime                                |
+ | Contents                             |
+ | Building                             |
+ | Indemnity                            |
+ | Business Interruption                |
+ | Additional Living Expense            |
+ | Equipment                            |
+ | Stock                                |
+ | Additional Coverages                 |
+ | Loss of Rent                         |
+ | Tow                                  |
+ | Storage                              |
+ | Medical/Rehabilitation               |
+ | Property Damage                      |
+ | Bodily Injury                        |
+ | Tenants legal liability              |
+ | Detached Building                    |
+ | Professional Fees                    |
+ | Electronic Data Processing Equipment |
+ | Collision                            |
+ | Theft                                |
+ | Vandalism                            |
+ | Direct Compensation                  |
+ | Glass - Windshield                   |
+ | Car Rental                           |
+ | Plate Glass                          |
+ | Extra Expense                        |
+ | Comprehensive                        |
+ | Improvements and Betterments         |
+ | Faulty Workmanship                   |
+ | Cargo                                |
+ | Income Replacement                   |
+ | Debris Removal                       |
+ | Tool Floater                         |
+ | Rental                               |
+ | Loss Assessment                      |
+ | Lock & Key                           |
+ | Livestock                            |
+ | Builders Risk                        |

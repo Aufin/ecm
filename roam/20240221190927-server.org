@@ -1,0 +1,74 @@
+:PROPERTIES:
+:ID:       a6e19b72-0d3f-4ef8-bd9e-f41438867de8
+:END:
+#+title: Server
+
+There's a standard server that I attempt to "clone". The idea is that
+the similarity makes them easy to manage and if one is lost another
+takes over without much downtime.
+
+* =LXD=, run a container!
+
+=LXD= is an [[https://en.wikipedia.org/wiki/LXC][LXC]] frontend/toplevel. It "is a modern, secure and
+powerful system container and virtual machine manager"
+
+It's got a [[https://github.com/canonical/lxd][github page]].
+
+The important details for us when we use guix are in the [[https://documentation.ubuntu.com/lxd/en/latest/installing/][Installing]]
+docs.
+#+begin_src sh
+  echo "root:1000000:1000000000" | sudo tee -a /etc/subuid /etc/subgid
+  sudo -E PATH=${PATH} LD_LIBRARY_PATH=${LD_LIBRARY_PATH} lxd --group sudo
+#+end_src
+#+begin_quote
+Machine setup
+
+You’ll need sub{u,g}ids for root, so that LXD can create the unprivileged containers:
+
+
+Now you can run the daemon (the --group sudo bit allows everyone in the sudo group to talk to LXD; you can create your own group if you want):
+
+#+end_quote
+
+* Ubuntu 22.04 LTS
+
+https://releases.ubuntu.com/22.04.3/ubuntu-22.04.3-live-server-amd64.iso
+
+** The =ecm= root user/group id =4242=.
+
+#+begin_src bash
+  groupadd -fg 4242 ecm
+  useradd -g 4242 -u 4242 -m ecm
+#+end_src
+
+** Syncthing
+
+We use [[id:cd942f0f-b05b-4cba-b4ad-0bdeb185b25c][Syncthing]] everywhere to, well, sync things.
+
+#+begin_src bash
+  apt update -y
+  apt upgrade -y
+  apt install -y software-properties-common apt-transport-https wget ca-certificates gnupg2 ubuntu-keyring
+
+  echo "deb [signed-by=/usr/share/keyrings/syncthing-archive-keyring.gpg] https://apt.syncthing.net/ syncthing stable" |  tee /etc/apt/sources.list.d/syncthing.list
+  curl -s -o /usr/share/keyrings/syncthing-archive-keyring.gpg https://syncthing.net/release-key.gpg
+
+  apt update
+  apt install syncthing
+  echo '[Service]' > /tmp/ecm_sync.conf
+  echo ExecStart= >> /tmp/ecm_sync.conf
+  echo ExecStart=/usr/bin/syncthing serve --no-browser --gui-address 0.0.0.0:8384 --no-restart --logflags=0  >> /tmp/ecm_sync.conf
+  sh -c 'SYSTEMD_EDITOR="cp /tmp/ecm_sync.conf" systemctl edit syncthing@ecm.service'
+
+#+end_src
+
+* SBCL and Quicklisp
+
+#+begin_src sh
+  apt install sbcl
+#+end_src
+
+
+
+
+

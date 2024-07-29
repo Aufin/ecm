@@ -1,0 +1,1307 @@
+#+TITLE: Claim
+#+PROPERTY: header-args:sql :engine postgres :cmdline "\"host=db.ecm.lan port=5432 user=maxclaims dbname=maxclaims\""
+
+* Table of Contents
+:PROPERTIES:
+:TOC:      :include all :depth 5 :ignore (this)
+:END:
+:CONTENTS:
+- [[#overview][Overview]]
+- [[#the-claim_crux-table-cache-and-friends][The claim_crux table, cache, and friends]]
+- [[#description-d-claim][Description: \d claim]]
+- [[#copy-aka-clone-claim-with-a-group-leader][Copy AKA clone Claim, with a group leader]]
+  - [[#function-clone_claimid-args][Function clone_claim(id, args)]]
+- [[#function-claim_statusclaim-time][Function claim_status(claim, time)]]
+- [[#indexes][Indexes]]
+- [[#function-claim_province][Function claim_province]]
+- [[#new-asking-report-thingie][New Asking Report Thingie]]
+- [[#triggers-all-of-them-should-be-here-but-are-not-][Triggers: All of them should be here but are not :)]]
+  - [[#date-of-denial][Date of Denial]]
+    - [[#backpoty][Backpoty]]
+- [[#the-claim_view-view][The claim_view view]]
+- [[#masterstudents--claim-risk-group][Master/Students : Claim Risk Group]]
+  - [[#master-id][Master ID!]]
+- [[#claims-generic-report][Claims Generic Report]]
+- [[#the-main-jso-object][The main JSO object]]
+- [[#object-link][Object Link]]
+- [[#search][Search]]
+- [[#older-jsos-and-function-and-backportable-things][Older JSO's and Function and Backportable things]]
+:END:
+
+* Overview
+:PROPERTIES:
+:CUSTOM_ID: overview
+:END:
+
+The claim is the entire reasoning behind both the database and the
+service in and of itself.
+
+
+* The =claim_crux= table, cache, and friends
+:PROPERTIES:
+:CUSTOM_ID: the-claim_crux-table-cache-and-friends
+:END:
+
+#+begin_src sql
+  CREATE TABLE claim_crux (
+   id INT PRIMARY KEY,
+   status TEXT 
+   policy JSONB,
+   timeline JSONB,
+   cause JSONB,
+   loss JSONB,
+   
+   
+   
+   
+#+end_src
+
+* 
+
+* Description: ~\d claim~
+:PROPERTIES:
+:CUSTOM_ID: description-d-claim
+:END:
+
+#+begin_src sql :results verbatim :wrap example
+    \d claim
+#+end_src
+
+#+RESULTS:
+#+begin_example
+Table "public.claim"
+Column	Type	Collation	Nullable	Default
+claim_id	integer		not null	nextval('claim_CLAIM_ID_seq'::text::regclass)
+adjuster_id	integer
+date_of_loss	timestamp without time zone
+status	text			'Open'::text
+cause	text
+modified	integer
+rev_date	timestamp without time zone
+open_date	timestamp without time zone		not null
+close_date	timestamp without time zone
+plaintiff_id	integer
+notes	text
+risk_id	integer		not null
+adjuster_office_id	integer
+deductible	numeric(20,2)			0
+defense_counsel_id	integer
+coverage_counsel_id	integer
+total_deductible	numeric(20,2)		not null	0
+authority	numeric(20,2)		not null	0
+external_adjuster_id	integer
+recovery_subrogation_date	timestamp without time zone
+claim_received_time	timestamp with time zone
+claim_acknowledged_time	timestamp with time zone
+peer_reviewed_date	date
+line_of_business	text
+coverage	text
+event_category	text
+basis_of_settlement	text
+subscription_percent	text
+denial	boolean		not null	false
+refer_to_underwriters	boolean		not null	false
+over_authority	timestamp without time zone
+open_for_recovery	boolean		not null	false
+claim_first_notification_acknowledgement_date	date
+insured_contacted_time	timestamp with time zone
+first_site_visit_time	timestamp with time zone
+restoration_firm_id	integer
+restoration_firm_emergency_id	integer
+restoration_firm_repair_id	integer
+lineage	text
+date_of_denial	timestamp with time zone
+reason_for_denial	text
+date_claim_made	timestamp with time zone
+Indexes:
+    "claim_pkey" PRIMARY KEY, btree (claim_id)
+    "claim_risk_id" btree (risk_id)
+    "claim_status_idx" btree (status)
+    "claim_status_open_idx" btree ((status = 'Open'::text))
+Check constraints:
+    "claim_deductible_check" CHECK (deductible >= 0::numeric)
+Foreign-key constraints:
+    "$2" FOREIGN KEY (adjuster_id) REFERENCES person(person_id)
+    "$3" FOREIGN KEY (plaintiff_id) REFERENCES person(person_id)
+    "claim_adjuster_office_id_fkey" FOREIGN KEY (adjuster_office_id) REFERENCES person(person_id)
+    "claim_cause_fkey" FOREIGN KEY (cause) REFERENCES claim_cause(claim_cause_type)
+    "claim_coverage_counsel_id_fkey" FOREIGN KEY (coverage_counsel_id) REFERENCES person(person_id)
+    "claim_coverage_fkey" FOREIGN KEY (coverage) REFERENCES coverage(coverage)
+    "claim_defense_counsel_id_fkey" FOREIGN KEY (defense_counsel_id) REFERENCES person(person_id)
+    "claim_external_adjuster_id_fkey" FOREIGN KEY (external_adjuster_id) REFERENCES person(person_id)
+    "claim_line_of_business_fkey" FOREIGN KEY (line_of_business) REFERENCES line_of_business(lob)
+    "claim_restoration_firm_emergency_id_fkey" FOREIGN KEY (restoration_firm_emergency_id) REFERENCES person(person_id)
+    "claim_restoration_firm_id_fkey" FOREIGN KEY (restoration_firm_id) REFERENCES person(person_id)
+    "claim_restoration_firm_repair_id_fkey" FOREIGN KEY (restoration_firm_repair_id) REFERENCES person(person_id)
+    "claim_risk_id_fkey" FOREIGN KEY (risk_id) REFERENCES risk(risk_id)
+    "claim_status_fkey" FOREIGN KEY (status) REFERENCES claim_status(claim_status_type)
+Referenced by:
+    TABLE "claim_transaction" CONSTRAINT "$1" FOREIGN KEY (claim_id) REFERENCES claim(claim_id)
+    TABLE "app_user_claim" CONSTRAINT "app_user_claim_claim_id_fkey" FOREIGN KEY (claim_id) REFERENCES claim(claim_id)
+    TABLE "attachment" CONSTRAINT "attachment_claim_id_fkey" FOREIGN KEY (claim_id) REFERENCES claim(claim_id)
+    TABLE "claim_attachment" CONSTRAINT "claim_attachment_claim_id_fkey" FOREIGN KEY (claim_id) REFERENCES claim(claim_id) ON UPDATE CASCADE ON DELETE CASCADE
+    TABLE "claim_authority" CONSTRAINT "claim_authority_claim_id_fkey" FOREIGN KEY (claim_id) REFERENCES claim(claim_id)
+    TABLE "claim_claim_detail" CONSTRAINT "claim_claim_detail_claim_id_fkey" FOREIGN KEY (claim_id) REFERENCES claim(claim_id)
+    TABLE "ui.claim" CONSTRAINT "claim_claim_id_fkey" FOREIGN KEY (claim_id) REFERENCES claim(claim_id)
+    TABLE "claim_ibc_code" CONSTRAINT "claim_ibc_code_claim_id_fkey" FOREIGN KEY (claim_id) REFERENCES claim(claim_id)
+    TABLE "claim_movement" CONSTRAINT "claim_movement_claim_id_fkey" FOREIGN KEY (claim_id) REFERENCES claim(claim_id)
+    TABLE "claim_status_detail" CONSTRAINT "claim_status_detail_claim_id_fkey" FOREIGN KEY (claim_id) REFERENCES claim(claim_id)
+    TABLE "claim_update" CONSTRAINT "claim_update_claim_id_fkey" FOREIGN KEY (claim_id) REFERENCES claim(claim_id)
+    TABLE "diary_entry" CONSTRAINT "diary_entry_claim_id_fkey" FOREIGN KEY (claim_id) REFERENCES claim(claim_id)
+    TABLE "driver_detail" CONSTRAINT "driver_detail_claim_id_fkey" FOREIGN KEY (claim_id) REFERENCES claim(claim_id)
+    TABLE "duplicate_attachment" CONSTRAINT "duplicate_attachment_claim_id_fkey" FOREIGN KEY (claim_id) REFERENCES claim(claim_id)
+    TABLE "empty_attachment" CONSTRAINT "empty_attachment_claim_id_fkey" FOREIGN KEY (claim_id) REFERENCES claim(claim_id)
+    TABLE "import_claim" CONSTRAINT "import_claim_claim_id_fkey" FOREIGN KEY (claim_id) REFERENCES claim(claim_id)
+    TABLE "lineage_claim" CONSTRAINT "lineage_claim_claim_id_fkey" FOREIGN KEY (claim_id) REFERENCES claim(claim_id)
+    TABLE "loss_detail" CONSTRAINT "loss_detail_claim_id_fkey" FOREIGN KEY (claim_id) REFERENCES claim(claim_id)
+    TABLE "missing_attachment" CONSTRAINT "missing_attachment_claim_id_fkey" FOREIGN KEY (claim_id) REFERENCES claim(claim_id)
+    TABLE "timecard" CONSTRAINT "timecard_claim_id_fkey" FOREIGN KEY (claim_id) REFERENCES claim(claim_id)
+    TABLE "timecard_interim" CONSTRAINT "timecard_interim_claim_id_fkey" FOREIGN KEY (claim_id) REFERENCES claim(claim_id)
+    TABLE "vehicle_detail" CONSTRAINT "vehicle_detail_claim_id_fkey" FOREIGN KEY (claim_id) REFERENCES claim(claim_id)
+Triggers:
+    claim_fits_policy_term AFTER INSERT OR UPDATE ON claim DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION claim_fits_policy_term()
+    claim_read_only_check BEFORE INSERT OR DELETE OR UPDATE ON claim FOR EACH ROW EXECUTE FUNCTION tg_tuple_read_only_claim()
+    claim_read_only_check_update BEFORE UPDATE ON claim FOR EACH ROW EXECUTE FUNCTION tg_tuple_read_only_claim_update()
+    hstore_row_history AFTER INSERT OR DELETE OR UPDATE ON claim FOR EACH ROW EXECUTE FUNCTION hstore_row_history()
+    record_claim_movement AFTER INSERT OR DELETE OR UPDATE ON claim FOR EACH ROW EXECUTE FUNCTION record_claim_movement('claim_id')
+    zclaim_open_for_recovery_date AFTER INSERT OR UPDATE ON claim FOR EACH ROW WHEN (new.open_for_recovery) EXECUTE FUNCTION trigger_claim_open_for_recovery_date()
+    zset_close_date BEFORE UPDATE OF status ON claim FOR EACH ROW WHEN (old.status <> 'Closed'::text AND new.status = 'Closed'::text) EXECUTE FUNCTION trigger_set_claim_close_date()
+    zset_rev_date BEFORE UPDATE OF status ON claim FOR EACH ROW WHEN (old.status <> 'Open'::text AND new.status = 'Open'::text) EXECUTE FUNCTION trigger_set_claim_rev_date()
+#+end_example
+
+* Copy AKA clone Claim, with a group leader
+:PROPERTIES:
+:CUSTOM_ID: copy-aka-clone-claim-with-a-group-leader
+:END:
+#+begin_src sql
+    SELECT version(); select pg_read_file('/etc/hostname') as hostname;
+#+end_src
+
+#+RESULTS:
+| version                                                                                                                             |
+|-------------------------------------------------------------------------------------------------------------------------------------|
+| PostgreSQL 12.14 (Ubuntu 12.14-1.pgdg22.04+1) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0, 64-bit |
+| hostname                                                                                                                            |
+| maxbuntu                                                                                                                            |
+|                                                                                                                                     |
+
+#+begin_src sql
+    ALTER TABLE claim ADD COLUMN group_leader_id INT REFERENCES claim(claim_id)
+#+end_src
+
+#+RESULTS:
+| ALTER TABLE |
+|-------------|
+
+** /Function/ =clone_claim(id, args)=
+:PROPERTIES:
+:CUSTOM_ID: function-clone_claimid-args
+:END:
+#+begin_src sql
+  CREATE OR REPLACE FUNCTION default_clone_claim_args()
+     RETURNS JSON LANGUAGE SQL IMMUTABLE AS $$
+    SELECT json_build_object(
+    'set_group_leader', true,
+    'clone_risk', true,
+    'contract_id', false,
+    'subscription', false)
+    $$;
+
+  CREATE OR REPLACE FUNCTION default_clone_risk_args()
+     RETURNS JSON LANGUAGE SQL IMMUTABLE AS $$
+    SELECT json_build_object(
+     'insert', true,
+     'contract_id', false);
+    $$;
+
+  CREATE OR REPLACE FUNCTION clone_risk
+  (INT, JSON DEFAULT default_clone_risk_args())
+   RETURNS risk LANGUAGE PLPGSQL AS $$
+   DECLARE
+    _risk risk;
+   BEGIN
+
+   CREATE TEMPORARY TABLE _clone_risk
+      ON COMMIT DROP
+   AS
+      (SELECT risk.* FROM risk WHERE risk_id = $1);
+
+   UPDATE _clone_risk SET risk_id = nextval('risk_risk_id_seq'::regclass);
+
+   IF ($2->'contract_id' IS NOT NULL
+         AND ($2->>'contract_id') != 'false')
+      THEN
+      UPDATE _clone_risk
+        SET contract_id = ($2->>'contract_id')::int;
+   END IF;
+
+   SELECT * INTO _risk FROM _clone_risk;
+
+   CREATE TEMPORARY TABLE _insert_risk
+    ON COMMIT DROP AS
+    SELECT * FROM _clone_risk WHERE
+    ($2->'insert' IS NOT NULL AND ($2->>'insert')::bool);
+
+   INSERT INTO risk SELECT * FROM _insert_risk;
+
+   RETURN _risk;
+   END;
+   $$;
+
+  CREATE OR REPLACE FUNCTION clone_claim
+   (INT, JSON DEFAULT default_clone_claim_args())
+    RETURNS claim LANGUAGE PLPGSQL VOLATILE AS $$
+    DECLARE
+     _claim claim;
+     _risk risk;
+     _subscription bool := false;
+     _clone_risk bool := true;
+     _set_group_leader bool := true;
+    BEGIN
+
+    CREATE TEMPORARY TABLE _clone_claim ON COMMIT DROP AS
+       (SELECT * FROM claim WHERE claim_id = $1);
+
+    -- Clone the risk?
+    SELECT (($2->'clone_risk' IS NOT NULL
+          AND ($2->>'clone_risk')::bool)
+          OR $2->'clone_risk' IS NULL) INTO _clone_risk;
+
+    IF (_clone_risk) THEN
+      SELECT * into _risk
+       FROM clone_risk((SELECT risk_id FROM _clone_claim),
+                        json_build_object(
+                        'contract_id', $2->'contract_id',
+                        'insert', true));
+     UPDATE _clone_claim SET risk_id = _risk.risk_id;
+    END IF;
+
+    UPDATE _clone_claim
+     SET claim_id = nextval('claim_claim_id_seq'::regclass) ;
+
+      SELECT (($2->'set_group_leader' IS NOT NULL
+             AND ($2->>'set_group_leader') != 'false'
+             AND ($2->>'set_group_leader') != 'f'
+             ) OR $2->'set_group_leader' IS NULL)
+          INTO _set_group_leader;
+
+    IF (_set_group_leader) THEN
+      UPDATE _clone_claim
+       SET group_leader_id = $1;
+    END IF;
+
+
+    SELECT (($2->'subscription' IS NOT NULL
+             AND ($2->>'subscription') != 'false'
+             AND ($2->>'subscription') != 'f'
+             ))
+          INTO _subscription;
+
+    IF (_subscription) THEN
+      UPDATE _clone_claim
+       SET subscription_percent = $2->>'subscription';
+    END IF;
+
+
+
+
+   SELECT * INTO _claim FROM _clone_claim _c;
+
+
+   CREATE TEMP TABLE _clone_industry
+   ON COMMIT DROP AS (SELECT * FROM claim_ibc_code WHERE claim_id = $1);
+    UPDATE _clone_industry SET claim_id = c.claim_id FROM _clone_claim c;
+
+   CREATE TEMP TABLE _clone_detail ON COMMIT DROP AS (SELECT * FROM claim_claim_detail WHERE claim_id = $1);
+    UPDATE _clone_detail SET claim_id = c.claim_id , claim_claim_detail_id = nextval('claim_claim_detail_claim_claim_detail_id_seq'::regclass)
+    FROM _clone_claim c ;
+
+    CREATE TEMP TABLE _clone_loss  ON COMMIT DROP AS (SELECT * FROM loss_detail WHERE claim_id = $1);
+    UPDATE _clone_loss SET claim_id = c.claim_id FROM _clone_claim c;
+
+    INSERT INTO claim SELECT * FROM _clone_claim;
+
+    INSERT INTO claim_ibc_code SELECT * FROM _clone_industry;
+    INSERT INTO claim_claim_detail SELECT * FROM _clone_detail;
+    INSERT INTO loss_detail SELECT * FROM _clone_loss;
+
+  RETURN _claim;
+  END;
+  $$;
+
+#+end_src
+
+#+RESULTS:
+| CREATE FUNCTION |
+|-----------------|
+| CREATE FUNCTION |
+| CREATE FUNCTION |
+| CREATE FUNCTION |
+
+* /Function/ ~claim_status(claim, time)~
+:PROPERTIES:
+:CUSTOM_ID: function-claim_statusclaim-time
+:END:
+#+begin_src sql
+    SELECT version();
+#+end_src
+
+#+RESULTS:
+| version                                                                           |
+|-----------------------------------------------------------------------------------|
+| PostgreSQL 14.4 on x86_64-unknown-linux-gnu, compiled by gcc (GCC) 10.3.0, 64-bit |
+
+  #+BEGIN_SRC sql :results code :exports none
+  select pg_get_functiondef(oid)||';' AS " "
+  from pg_proc
+  where proname = 'claim_status';
+  #+END_SRC
+
+  #+RESULTS:
+  #+begin_src sql
+
+  CREATE OR REPLACE FUNCTION public.claim_status(integer, timestamp without time zone)
+   RETURNS text
+   LANGUAGE sql
+  AS $function$
+  SELECT claim_status(claim.*, $2) FROM claim WHERE claim_id = $1 ;
+  $function$
+  ;
+  CREATE OR REPLACE FUNCTION public.claim_status(integer)
+   RETURNS text
+   LANGUAGE sql
+  AS $function$SELECT claim_status.claim_status_type FROM claim_status, claim
+          WHERE claim_id = $1 and claim_status.claim_status_type = claim.status$function$
+  ;
+  CREATE OR REPLACE FUNCTION public.claim_status(claim, timestamp without time zone)
+   RETURNS text
+   LANGUAGE sql
+  AS $function$
+      SELECT CASE
+        WHEN (($1.open_date <= $2 OR $1.open_date <= $2)
+               AND (($1.close_date IS NULL AND $1.status = 'Open')
+                     OR $1.close_date > $2))
+        THEN 'Open'
+        WHEN (($1.rev_date <= $2 OR $1.rev_date  <= $2
+               OR ($1.rev_date IS NULL AND $1.status = 'Open'))
+               AND (($1.close_date IS NOT NULL AND $1.status = 'Open')
+                     OR $1.close_date < $1.rev_date))
+
+        THEN 'Reopened'
+        WHEN ($1.close_date <= $2)
+        THEN 'Closed'
+     END ;
+
+   $function$
+  ;
+  #+end_src
+
+  #+RESULTS:
+  | CREATE FUNCTION |
+  |-----------------|
+  | CREATE FUNCTION |
+  | CREATE FUNCTION |
+
+* Indexes
+:PROPERTIES:
+:CUSTOM_ID: indexes
+:END:
+
+#+begin_src sql
+  -- Status!
+  CREATE INDEX IF NOT EXISTS claim_status_idx ON claim (status);
+  CREATE INDEX IF NOT EXISTS claim_status_open_idx ON claim ((status = 'Open'::text));
+
+#+end_src
+
+#+RESULTS:
+| CREATE INDEX |
+|--------------|
+| DROP INDEX   |
+| CREATE INDEX |
+
+* /Function/ ~claim_province~
+:PROPERTIES:
+:CUSTOM_ID: function-claim_province
+:END:
+
+We often need to know the "province" of a claim. It's either the loss or insured for now.
+
+#+begin_src sql
+    -- EXPLAIN ANALYZE
+  CREATE OR REPLACE FUNCTION claim_province(claim_id INT) RETURNS text LANGUAGE SQL STABLE AS $$
+     SELECT COALESCE(l.value, ps.short_name)
+     FROM claim_view c
+   JOIN loss_detail l ON (c.claim_id = l.claim_id AND l.key = 'Loss Province')
+  JOIN person p ON ((c.policy).insured_id = person_id)
+   JOIN province_state ps USING(province_state_id)
+   WHERE c.claim_id = $1
+     LIMIT 1
+    ;
+   $$;
+#+end_src
+
+#+RESULTS:
+| CREATE FUNCTION |
+|-----------------|
+#+begin_src sql :results verbatim :wrap example
+   -- EXPLAIN ANALYZE
+    SELECT claim_province(claim_id)
+           AS province FROM claim
+         WHERE (claim).status = 'Open' -- LIMIT 10;
+         AND claim_province(claim_id) ILIKE 'A%' LIMIT 10;
+#+end_src
+
+#+RESULTS:
+#+begin_example
+province
+AB
+AB
+AB
+AB
+AB
+AB
+AB
+AB
+AB
+AB
+#+end_example
+
+#+begin_src sql
+    EXPLAIN ANALYSE SELECT * FROM (SELECT claim_id, claim_province(claim_id)
+          AS province FROM claim
+          WHERE (claim).status = 'Open' AND TRUE) rep
+          WHERE province ILIKE 'A%' LIMIT 1;
+#+end_src
+
+#+RESULTS:
+| QUERY PLAN                                                                                                                        |
+|-----------------------------------------------------------------------------------------------------------------------------------|
+| Limit  (cost=0.29..0.86 rows=1 width=36) (actual time=7.518..7.519 rows=1 loops=1)                                                |
+| ->  Index Scan using claim_status_idx on claim  (cost=0.29..1818.06 rows=3170 width=36) (actual time=7.517..7.517 rows=1 loops=1) |
+| Index Cond: (status = 'Open'::text)                                                                                               |
+| Filter: (claim_province(claim_id) ~~* 'A%'::text)                                                                                 |
+| Rows Removed by Filter: 1                                                                                                         |
+| Planning Time: 1.376 ms                                                                                                           |
+| Execution Time: 7.645 ms                                                                                                          |
+
+| key              |
+|------------------|
+| Loss Postal Code |
+| Loss Location #2 |
+| Cat Code         |
+| Loss Province    |
+| Loss City        |
+| Loss Location    |
+| Type of Loss     |
+| Type of Cargo    |
+| Loss Country     |
+| Cat Name         |
+| Number of Units  |
+
+* New Asking Report Thingie
+:PROPERTIES:
+:CUSTOM_ID: new-asking-report-thingie
+:END:
+
+ - [ ] What % of our claims involve an external adjuster for each class of
+   business (property, auto, liability, etc.)
+
+   #+begin_src sql
+
+   SELECT coalesce(class, 'None') as "Class", claims AS "Total Claims",
+    "External Adjusters", round(100 * "External Adjusters"/claims::numeric, 2) || '%' AS "External Adjuster %",
+    "External Lawyers", round(100 * "External Lawyers"/claims::numeric, 2) || '%' AS "External Lawyer %"
+   FROM
+    (SELECT (SELECT count(claim_id) AS totalClaims
+            FROM claim),
+      line_of_business AS class,
+     count(*) AS claims,
+     count(external_adjuster_id) AS "External Adjusters",
+     (count(defense_counsel_id) + count(coverage_counsel_id)) AS "External Lawyers"
+     FROM claim
+     GROUP BY line_of_business
+     ORDER BY line_of_business NULLS FIRST) re
+
+
+   #+end_src
+
+   | Class       | Total Claims | External Adjusters | External Adjuster % | External Lawyers | External Lawyer % |
+   |-------------+--------------+--------------------+---------------------+------------------+-------------------|
+   | None        |        33902 |               2015 |               5.94% |              908 |             2.68% |
+   | A & H       |           98 |                 27 |              27.55% |                1 |             1.02% |
+   | Auto        |          874 |                423 |              48.40% |                3 |             0.34% |
+   | Cargo       |          371 |                317 |              85.44% |               16 |             4.31% |
+   | D & O       |            4 |                  3 |              75.00% |                2 |            50.00% |
+   | Engineering |            7 |                  3 |              42.86% |                2 |            28.57% |
+   | E & O       |           65 |                 57 |              87.69% |               23 |            35.38% |
+   | Liability   |         3702 |               2839 |              76.69% |              953 |            25.74% |
+   | Property    |        22452 |              17564 |              78.23% |              344 |             1.53% |
+   | Specie      |           13 |                  8 |              61.54% |                1 |             7.69% |
+
+ - [ ]
+ - [ ]
+
+* =Triggers=: All of them should be here but are not :)
+:PROPERTIES:
+:CUSTOM_ID: triggers-all-of-them-should-be-here-but-are-not-
+:END:
+** Date of Denial
+:PROPERTIES:
+:CUSTOM_ID: date-of-denial
+:END:
+
+#+begin_src sql
+CREATE OR REPLACE FUNCTION claim_ensure_date_of_denial()
+RETURNS TRIGGER LANGUAGE PLPGSQL AS $$
+BEGIN
+ IF (NEW.denial AND NEW.date_of_denial IS NULL) THEN
+    NEW.date_of_denial = now();
+ END IF;
+
+ RETURN NEW;
+END
+$$;
+
+CREATE TRIGGER z_claim_ensure_date_of_denial BEFORE INSERT OR UPDATE ON claim
+ FOR EACH ROW EXECUTE PROCEDURE
+  claim_ensure_date_of_denial();
+
+#+end_src
+
+*** Backpoty
+:PROPERTIES:
+:CUSTOM_ID: backpoty
+:END:
+
+Set the existing ones to what they should be.
+#+begin_src sql
+    ALTER TABLE claim DISABLE TRIGGER ALL;
+  CREATE TEMP TABLE _claim_denial_ AS        SELECT claim_id, (claim).denial, (claim).date_of_denial, modification_time
+         FROM claim_view LEFT JOIN history.hstore_history hs ON (claim_id = row_id AND
+     history->'denial' = 't')
+     WHERE (claim).denial  AND (claim).date_of_denial IS NULL;
+
+     UPDATE claim SET date_of_denial = cd.modification_time
+     FROM _claim_denial_ cd WHERE (cd.claim_id = claim.claim_id);
+
+    ALTER TABLE claim ENABLE TRIGGER ALL;
+
+    SELECT count(*) FROM _claim_denial_;
+#+end_src
+
+
+
+* The ~claim_view~ view
+:PROPERTIES:
+:CUSTOM_ID: the-claim_view-view
+:END:
+
+#+begin_src sql
+CREATE OR REPLACE VIEW claim_view AS (
+ SELECT claim_id, claim, risk_id, risk, policy_id, policy, contract_id, contract
+ FROM claim JOIN risk USING(risk_id) JOIN policy USING (policy_id) JOIN contract USING (contract_id)
+);
+
+SELECT person_name((claim).adjuster_id) AS Examiner, person_name((policy).insured_id) FROM claim_view LIMIT 1;
+#+end_src
+
+#+RESULTS:
+| CREATE VIEW                           |                                |
+|---------------------------------------+--------------------------------|
+| examiner                              | person_name                    |
+| Cory Feng Maxwell Claims Services Inc | The Owners, Strata Plan VR2301 |
+
+* Master/Students : Claim Risk Group
+:PROPERTIES:
+:CUSTOM_ID: masterstudents--claim-risk-group
+:END:
+
+We need to backport in this feature. At some point the examiners decided that one "claim" on one "loss" is in fact multiple risks (and therefore multiple claim rows) that are divided by a "subscription_percent" for transactions.
+
+Now that makes sense. Many "syndicates" divide up reposiblity for the incurred
+loss expense and they only care about their claims and transactions.
+
+So the users fudged it in, and now the developers need to make it a feature.
+
+#+begin_src sql
+CREATE OR REPLACE FUNCTION claim_master_id(claim)
+RETURNS INT LANGUAGE SQL AS $$
+SELECT master.claim_id AS master_id
+ FROM  (SELECT CASE WHEN length(master_str) <=6 THEN master_str::int END as master_id, * FROM
+ (SELECT claim_id, substring(notes FROM '([\d]+)') AS master_str, notes from timecard WHERE notes ~* '^master .*\d' AND claim_id = $1.claim_id) str) mid
+JOIN claim AS student ON (mid.claim_id = student.claim_id)
+JOIN claim AS master ON (mid.master_id = master.claim_id AND master.claim_id != student.claim_id)
+$$;
+#+end_src
+
+#+RESULTS:
+| CREATE FUNCTION |
+|-----------------|
+
+*** Master ID!
+:PROPERTIES:
+:CUSTOM_ID: master-id
+:END:
+
+#+begin_src sql
+ALTER TABLE claim ADD COLUMN master_id INT REFERENCES claim(claim_id);
+#+end_src
+
+
+* Claims Generic Report
+:PROPERTIES:
+:CUSTOM_ID: claims-generic-report
+:END:
+
+#+begin_src sql
+DROP TYPE claim_generic_report_args CASCADE ;
+CREATE TYPE claim_generic_report_args AS (
+ claim_id INT,
+ status TEXT,
+ examiner_id INT,
+ over_authority BOOL,
+ open_timeframe timestamp[],
+ close_timeframe timestamp[],
+ line_of_business TEXT
+);
+
+DROP TYPE IF EXISTS claim_generic_report CASCADE;
+CREATE TYPE claim_generic_report AS (
+ "Claim Number" INT,
+ "Status" TEXT,
+ "Line of Business" TEXT,
+ "Date of Loss" date,
+ "Open Date" timestamp,
+ "Close Date" timestamp,
+ "Open For" INTERVAL,
+ "Examiner" TEXT,
+ "Adjuster" TEXT,
+ "Coverage Counsel" TEXT,
+ "Defense Counsel" TEXT,
+ "Contract" TEXT,
+ "Coverholder" TEXT,
+ "Syndicate" TEXT,
+ "Subscription %" TEXT,
+ "Policy" TEXT,
+ "Insured" TEXT,
+ "Incurred" NUMERIC,
+ "Authority" NUMERIC
+);
+
+CREATE OR REPLACE FUNCTION claim_generic_report(args JSON)
+ RETURNS SETOF claim_generic_report LANGUAGE SQL AS $$
+ SELECT (claim).claim_id, (claim).status, (claim).line_of_business
+ , (claim).date_of_loss::date, (claim).open_date, (claim).close_date,
+   COALESCE((claim).close_date, NOW()) - (claim).open_date,
+ person_short_name((claim).adjuster_id),
+ person_name((claim).external_adjuster_id),
+ person_name((claim).coverage_counsel_id),
+ person_name((claim).defense_counsel_id),
+ (contract).contract_number,
+ person_name((contract).agency_id),
+ person_name((contract).syndicate_id),
+ -- CASE WHEN (claim).subscription_percent ~* '\d'
+ --      THEN to_number((claim).subscription_percent, '999.99')
+ --      ELSE 100 END
+         (claim).subscription_percent
+      ,
+ (policy).policy_number,
+ person_name((policy).insured_id),
+ claim_incurred((claim).claim_id),
+ claim_authority(claim)
+ FROM (
+  SELECT
+    CASE WHEN open_timeframe IS NOT NULL
+     THEN tsrange(open_timeframe[1], open_timeframe[2]) END
+     AS open_range,
+    CASE WHEN close_timeframe IS NOT NULL
+    THEN tsrange(close_timeframe[1], close_timeframe[2]) END
+     AS close_range,
+     ,*
+   FROM json_populate_record(null::claim_generic_report_args, $1)) AS jso
+ LEFT JOIN claim_view
+  ON (
+   (jso.open_range IS NULL OR (claim).open_date <@ open_range)
+   AND
+   (jso.close_range IS NULL OR (claim).close_date <@ close_range)
+   AND
+   (jso.examiner_id IS NULL OR (claim).adjuster_id = jso.examiner_id)
+   AND (jso.line_of_business IS NULL OR jso.line_of_business = 'false' OR (claim).line_of_business = jso.line_of_business)
+   AND (jso.over_authority IS NULL OR NOT jso.over_authority OR ((claim).status = 'Open' AND claim_over_authority(claim)))
+
+   )
+
+ ORDER BY claim_id
+
+
+
+
+ $$;
+
+CREATE OR REPLACE FUNCTION claim_generic_report_args(JSON)
+RETURNS claim_generic_report_args LANGUAGE SQL AS $$
+ SELECT json_populate_record(null::claim_generic_report_args, $1)
+$$;
+        -- "close_timeframe": ["2021-01-01", "2022-01-01"],
+        -- "open_timeframe": ["2020-01-01", "2022-02-01"],
+SELECT * FROM claim_generic_report('
+ {
+  "examiner_id":  8540
+ }') LIMIT 3;
+
+#+end_src
+
+#+RESULTS:
+| DROP TYPE       |        |                  |              |                     |                            |                          |          |          |                  |                 |                      |             |                              |                |                             |                                           |          |           |
+|-----------------+--------+------------------+--------------+---------------------+----------------------------+--------------------------+----------+----------+------------------+-----------------+----------------------+-------------+------------------------------+----------------+-----------------------------+-------------------------------------------+----------+-----------|
+| CREATE TYPE     |        |                  |              |                     |                            |                          |          |          |                  |                 |                      |             |                              |                |                             |                                           |          |           |
+| DROP TYPE       |        |                  |              |                     |                            |                          |          |          |                  |                 |                      |             |                              |                |                             |                                           |          |           |
+| CREATE TYPE     |        |                  |              |                     |                            |                          |          |          |                  |                 |                      |             |                              |                |                             |                                           |          |           |
+| CREATE FUNCTION |        |                  |              |                     |                            |                          |          |          |                  |                 |                      |             |                              |                |                             |                                           |          |           |
+| CREATE FUNCTION |        |                  |              |                     |                            |                          |          |          |                  |                 |                      |             |                              |                |                             |                                           |          |           |
+| Claim Number    | Status | Line of Business | Date of Loss | Open Date           | Close Date                 | Open For                 | Examiner | Adjuster | Coverage Counsel | Defense Counsel | Contract             | Coverholder | Syndicate                    | Subscription % | Policy                      | Insured                                   | Incurred | Authority |
+| 56929           | Closed | Liability        |   2019-05-01 | 2019-11-12 16:13:33 | 2020-11-20 12:30:31.322651 | 373 days 20:16:58.322651 | Crampsie |          |                  |                 | test                 | test        |                              |                | test                        | test                                      |        0 |           |
+| 56931           | Closed | Property         |   2019-05-01 | 2019-11-12 16:14:11 | 2020-11-20 12:31:12.685305 | 373 days 20:17:01.685305 | Crampsie |          |                  |                 | test                 | test        |                              |                | test                        | test                                      |        0 |           |
+| 63428           | Open   | Engineering      |   2022-01-01 | 2022-02-01 19:59:37 |                            | 79 days 18:31:06.041578  | Crampsie |          |                  |                 | ECM Development 2022 | Test Agency | Maxwell Claims Services Inc. |                | 2022 ECM User Interface Dev | Drew Crampsie Aufin Shatranj Trading Inc. | 22022.00 |           |
+
+* The main JSO object
+:PROPERTIES:
+:CUSTOM_ID: the-main-jso-object
+:END:
+
+  #+begin_src sql
+
+CREATE OR REPLACE FUNCTION claim_to_json(
+   claim, _options json DEFAULT '{
+     "show_transactions" : false,
+     "show_attachments" : false,
+     "show_diary": false,
+     "show_risk": true
+     }'::json)
+   RETURNS json LANGUAGE sql STABLE
+  AS $$
+    SELECT
+    json_strip_nulls(
+      json_build_object(
+     'claim_id', $1.claim_id,
+     'date_of_loss', $1.date_of_loss::date,
+     'status', $1.status,
+     --'status_detail', jsi.claim_status_detail($1),
+      -- Associates
+     'examiner', person_to_json($1.adjuster_id),
+     'adjuster', person_to_json($1.external_adjuster_id),
+     'claimant', person_to_json($1.plaintiff_id),
+     'coverage_counsel', person_to_json($1.coverage_counsel_id),
+     'defense_counsel', person_to_json($1.defense_counsel_id),
+     'restoration_firm_emergency', person_to_json($1.restoration_firm_emergency_id),
+     'restoration_firm_repair', person_to_json($1.restoration_firm_repair_id),
+      -- Metadata
+     --'metadata', jso.metadata($1),
+      -- Timeline
+     -- 'timeline', jso.timeline($1),
+     --'balance', jso.balance($1),
+     'risk',
+     (SELECT (risk_to_json($1.risk_id, json_build_object('show_claims', false))::jsonb
+       || json_build_object('other_claims', (SELECT json_agg(claim_to_json(claim, '{"show_risk": false}'::json))
+                                       FROM claim WHERE risk_id = $1.risk_id AND claim.claim_id != $1.claim_id))::jsonb)::json
+            WHERE $2->>'show_risk' IS NULL OR $2->>'show_risk' != 'false'),
+    -- 'cause', jso.claim_cause($1),
+    -- 'loss', jso.loss($1),
+  --   'authority', jsi.claim_authority($1),
+     'subscription_percent', $1.subscription_percent::numeric --,
+     -- 'timecards', (SELECT json_agg(sub.t) FROM (SELECT to_json(tr) AS t
+     --                                     FROM timecard_report AS tr
+     --                                    WHERE tr.claim_id = $1.claim_id
+     --                                    ORDER BY date) AS sub),
+     -- 'outstanding_diary',  (SELECT json_agg(jsi.diary_entry(diary_entry)) FROM diary_entry
+
+     --                         WHERE diary_entry_id
+     --                               IN (SELECT DISTINCT diary_entry_id
+     --                                     FROM diary_entry
+     --                                    WHERE claim_id = $1.claim_id
+     --                                      AND diary_entry_is_outstanding(diary_entry))),
+     -- 'transactions', (SELECT json_agg(t.t)
+     --                  FROM
+     --                   (SELECT jso.transaction(t) AS t
+     --                    FROM claim_transaction AS t
+     --                    WHERE t.claim_id = $1.claim_id
+     --                    ORDER BY t.transaction_date, t.transaction_id) AS t),
+     -- 'attachments', (SELECT json_agg(ja) FROM
+     --                  (SELECT jso.claim_attachment(ca) ja
+     --                     FROM claim_attachment AS ca
+     --                       WHERE ca.claim_id = $1.claim_id
+     --                    ORDER BY date) ob),
+     -- 'diary', (SELECT jsi.claim_diary($1.claim_id))
+    ));
+
+  $$;
+
+    CREATE OR REPLACE FUNCTION claim_to_json(int) RETURNS json LANGUAGE SQL
+     AS 'SELECT claim_to_json(claim) FROM claim WHERE claim_id = $1;';
+  #+end_src
+
+  #+RESULTS:
+  | CREATE FUNCTION |
+  |-----------------|
+  | CREATE FUNCTION |
+#+begin_src sql
+SELECT claim_to_json(claim) FROM claim LIMIT 1;
+#+end_src
+
+
+  #+BEGIN_SRC sql :results code :exports none
+  select pg_get_functiondef(oid) AS " "
+  from pg_proc
+  where proname = 'claim';
+  #+END_SRC
+
+
+* Object Link
+:PROPERTIES:
+:CUSTOM_ID: object-link
+:END:
+#+begin_src sql
+CREATE OR REPLACE FUNCTION claim_object_link(claim)
+RETURNS JSON LANGUAGE SQL AS $$
+SELECT row_to_json(c) FROM
+(SELECT $1.claim_id,
+    person_object_link($1.adjuster_id) AS examiner,
+    person_object_link($1.external_adjuster_id) AS adjuster,
+    risk_object_link($1.risk_id)
+ ) c
+$$;
+
+
+SELECT claim_object_link(claim) FROM claim LIMIT 5;
+#+end_src
+
+#+RESULTS:
+| CREATE FUNCTION                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| claim_object_link                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| {"claim_id":45446,"examiner":{"person_id" : 34376, "name" : "Ronni Bateman Maxwell Claims Services", "short_name" : "Ronni Bateman"},"adjuster":{"person_id" : 39932, "name" : "ClaimsPro (Burnaby) BC", "short_name" : "ClaimsPro (Burnaby) BC"},"risk_object_link":{"risk_id":40798,"type":"Commercial","code":"B5","policy":{"policy_id":26947,"policy_number":"CNW2265","effective_date":"2018-01-31T00:00:00","expiry_date":"2019-01-31T00:00:00","insured":{"person_id" : 36774, "name" : "The Owners of Strata Plan NW 2265 Park Ave Towers", "short_name" : "The Owners of Strata Plan NW 2265 Park Ave Towers"},"agent":{"person_id" : 30578, "name" : "Temple Insurance Program", "short_name" : "Temple Insurance Program"},"company":{"person_id" : 28170, "name" : "Temple Insurance Company of Canada", "short_name" : "Temple Insurance Company of Canada"},"underwriter":null,"branch":null,"agency_office":{"person_id" : 30147, "name" : "HUB International Coastal Insurance Brokers", "short_name" : "HUB International Coastal Insurance Brokers"}},"contract":{"contract_id":2545,"contract_number":"B1000P043272016-2","effective_date":"2016-10-01","expiry_date":"2018-01-31","syndicate":{"person_id" : 38815, "name" : "CNA Hardy", "short_name" : "CNA Hardy"},"insurance_company":null,"london_broker":{"person_id" : 32221, "name" : "Meridian Risk Solutions", "short_name" : "Meridian Risk Solutions"},"agency":{"person_id" : 30147, "name" : "HUB International Coastal Insurance Brokers", "short_name" : "HUB International Coastal Insurance Brokers"}}}} |
+| {"claim_id":46915,"examiner":{"person_id" : 37911, "name" : "Heather deVink Maxwell Claims Services", "short_name" : "Heather deVink"},"adjuster":{"person_id" : 32380, "name" : "Craig Gamble Coast Claims Service Ltd.", "short_name" : "Craig Gamble"},"risk_object_link":{"risk_id":42147,"type":"Commercial","code":"B5","policy":{"policy_id":27603,"policy_number":"BSP70063","effective_date":"2018-02-01T00:00:00","expiry_date":"2019-02-01T00:00:00","insured":{"person_id" : 36796, "name" : "Owners Strata Plan VIS 2861", "short_name" : "Owners Strata Plan VIS 2861"},"agent":{"person_id" : 30578, "name" : "Temple Insurance Program", "short_name" : "Temple Insurance Program"},"company":{"person_id" : 28170, "name" : "Temple Insurance Company of Canada", "short_name" : "Temple Insurance Company of Canada"},"underwriter":null,"branch":null,"agency_office":{"person_id" : 36165, "name" : "Hub International - Nanaimo", "short_name" : "Hub International - Nanaimo"}},"contract":{"contract_id":2349,"contract_number":"Temple Strata Program","effective_date":"2015-01-01","expiry_date":"2030-01-01","syndicate":null,"insurance_company":null,"london_broker":null,"agency":{"person_id" : 7836, "name" : "Temple Insurance", "short_name" : "Temple Insurance"}}}}                                                                                                                                                                                                                                                                                         |
+| {"claim_id":44293,"examiner":{"person_id" : 37594, "name" : "Mounira Klein Maxwell Claims Services", "short_name" : "Mounira Klein"},"adjuster":{"person_id" : 36140, "name" : "Vanessa Rye Claimspro", "short_name" : "Vanessa Rye"},"risk_object_link":{"risk_id":39742,"type":"Commercial","code":"B5","policy":{"policy_id":26347,"policy_number":"CLMS4496","effective_date":"2018-02-01T00:00:00","expiry_date":"2019-02-01T00:00:00","insured":{"person_id" : 40419, "name" : "The Owners of Strata Plan LMS 4496 Heritage Meadows", "short_name" : "The Owners of Strata Plan LMS 4496 Heritage Meadows"},"agent":{"person_id" : 30578, "name" : "Temple Insurance Program", "short_name" : "Temple Insurance Program"},"company":{"person_id" : 28170, "name" : "Temple Insurance Company of Canada", "short_name" : "Temple Insurance Company of Canada"},"underwriter":null,"branch":null,"agency_office":{"person_id" : 30147, "name" : "HUB International Coastal Insurance Brokers", "short_name" : "HUB International Coastal Insurance Brokers"}},"contract":{"contract_id":2349,"contract_number":"Temple Strata Program","effective_date":"2015-01-01","expiry_date":"2030-01-01","syndicate":null,"insurance_company":null,"london_broker":null,"agency":{"person_id" : 7836, "name" : "Temple Insurance", "short_name" : "Temple Insurance"}}}}                                                                                                                                                                                                                             |
+| {"claim_id":46904,"examiner":{"person_id" : 34376, "name" : "Ronni Bateman Maxwell Claims Services", "short_name" : "Ronni Bateman"},"adjuster":{"person_id" : 39932, "name" : "ClaimsPro (Burnaby) BC", "short_name" : "ClaimsPro (Burnaby) BC"},"risk_object_link":{"risk_id":42139,"type":"Commercial","code":"B5","policy":{"policy_id":27600,"policy_number":"CNW96","effective_date":"2018-06-08T00:00:00","expiry_date":"2019-06-08T00:00:00","insured":{"person_id" : 32101, "name" : "The Owners of Strata Plan NW 96 Edgewater Park", "short_name" : "The Owners of Strata Plan NW 96 Edgewater Park"},"agent":{"person_id" : 30578, "name" : "Temple Insurance Program", "short_name" : "Temple Insurance Program"},"company":{"person_id" : 28170, "name" : "Temple Insurance Company of Canada", "short_name" : "Temple Insurance Company of Canada"},"underwriter":null,"branch":null,"agency_office":{"person_id" : 30147, "name" : "HUB International Coastal Insurance Brokers", "short_name" : "HUB International Coastal Insurance Brokers"}},"contract":{"contract_id":2635,"contract_number":"B1000P043272018","effective_date":"2018-02-01","expiry_date":"2019-01-31","syndicate":{"person_id" : 32220, "name" : "Dale Syndicate", "short_name" : "Dale Syndicate"},"insurance_company":null,"london_broker":{"person_id" : 32221, "name" : "Meridian Risk Solutions", "short_name" : "Meridian Risk Solutions"},"agency":{"person_id" : 30147, "name" : "HUB International Coastal Insurance Brokers", "short_name" : "HUB International Coastal Insurance Brokers"}}}} |
+| {"claim_id":56594,"examiner":{"person_id" : 30624, "name" : "Joy Banks Maxwell Claims Services", "short_name" : "Joy Banks"},"adjuster":null,"risk_object_link":{"risk_id":44840,"type":"Commercial","code":"B5","policy":{"policy_id":29512,"policy_number":"DG1800542900100","effective_date":"2018-11-01T00:00:00","expiry_date":"2019-12-01T00:00:00","insured":{"person_id" : 33024, "name" : "Meridian OneCap Credit Corp", "short_name" : "Meridian OneCap Credit Corp"},"agent":{"person_id" : 33025, "name" : "Seattle Specialty Services Inc", "short_name" : "Seattle Specialty Services Inc"},"company":{"person_id" : 1007, "name" : "Lloyd's of London", "short_name" : "Lloyd's of London"},"underwriter":null,"branch":null,"agency_office":null},"contract":{"contract_id":3043,"contract_number":"B1353DG1800542000-Marsh","effective_date":"2018-04-01","expiry_date":"2019-03-31","syndicate":{"person_id" : 25833, "name" : "Ascot", "short_name" : "Ascot"},"insurance_company":null,"london_broker":{"person_id" : 53521, "name" : "Marsh", "short_name" : "Marsh"},"agency":{"person_id" : 33025, "name" : "Seattle Specialty Services Inc", "short_name" : "Seattle Specialty Services Inc"}}}}                                                                                                                                                                                                                                                                                                                                                                        |
+
+* Search
+:PROPERTIES:
+:CUSTOM_ID: search
+:END:
+
+#+begin_src sql
+CREATE OR REPLACE FUNCTION search_index_text(claim) RETURNS tsvector LANGUAGE SQL AS $$
+ SELECT to_tsvector('#' || $1.claim_id) || to_tsvector($1.claim_id::text)
+   || json_to_tsvector('english', claim_object_link($1), '["string"]');
+$$;
+
+CREATE OR REPLACE FUNCTION search_index_obj_type(claim) RETURNS text LANGUAGE SQL AS $$
+ SELECT 'claim'
+$$;
+
+#+end_src
+
+#+RESULTS:
+| CREATE FUNCTION |
+|-----------------|
+| CREATE FUNCTION |
+
+* Older JSO's and Function and Backportable things
+:PROPERTIES:
+:CUSTOM_ID: older-jsos-and-function-and-backportable-things
+:END:
+
+ #+BEGIN_SRC sql :results code :exports none
+ select pg_get_functiondef(oid) AS " "
+ from pg_proc
+ where proname = 'claim_cause';
+ #+END_SRC
+
+ #+RESULTS:
+ #+begin_src sql
+
+ CREATE OR REPLACE FUNCTION jso.claim_cause(claim_id integer)
+  RETURNS json
+  LANGUAGE sql
+ AS $function$
+    SELECT jso.claim_cause(claim) FROM claim WHERE claim_id = $1
+  $function$
+
+ CREATE OR REPLACE FUNCTION jsi.claim_cause(claim_id integer)
+  RETURNS json
+  LANGUAGE sql
+ AS $function$
+   SELECT jsi.claim_cause(claim) FROM claim WHERE claim_id = $1
+ $function$
+
+ CREATE OR REPLACE FUNCTION jso.claim_cause(claim)
+  RETURNS json
+  LANGUAGE sql
+ AS $function$
+    SELECT json_build_object(
+     'description', claim_cause_type,
+     'code', cause_code)
+    FROM claim_cause WHERE claim_cause_type = $1.cause
+  $function$
+
+ CREATE OR REPLACE FUNCTION jsi.claim_cause(claim)
+  RETURNS json
+  LANGUAGE sql
+ AS $function$
+   SELECT json_build_object(
+    'description', claim_cause_type,
+    'code', cause_code)
+   FROM claim_cause WHERE claim_cause_type = $1.cause
+ $function$
+
+ #+end_src
+
+ #+BEGIN_SRC sql :results code :exports none
+               CREATE OR REPLACE FUNCTION jsi.claim_group(claim)
+               RETURNS JSON LANGUAGE SQL AS $$
+                       SELECT json_strip_nulls(to_json(grp.*)) FROM (
+
+                       SELECT $1.group_leader_id AS leader,
+                              (SELECT array_agg(
+                               json_build_object('claim_id', claim_id, 'percent', subscription_percent)
+                               )
+                               FROM claim
+                               WHERE group_leader_id = $1.group_leader_id
+                               AND group_leader_id IS NOT NULL
+                               AND claim_id != $1.claim_id) AS peers,
+                               (SELECT array_agg(
+                                  json_build_object('claim_id', claim_id, 'percent', subscription_percent)
+                                 )
+                                FROM claim
+                                WHERE group_leader_id = $1.claim_id
+                               ) AS followers
+
+                       ) grp;
+
+
+                 $$;
+ #+END_SRC
+
+ #+RESULTS:
+ #+begin_src sql
+ CREATE FUNCTION
+ #+end_src
+
+ #+BEGIN_SRC sql :results code :exports none
+ select pg_get_functiondef(oid) AS " ", ';' AS "  "
+ from pg_proc
+ where proname = 'claim_crux';
+ #+END_SRC
+ #+RESULTS:
+ #+begin_src sql
+
+   CREATE OR REPLACE FUNCTION jsi.claim_crux(claim_id integer)
+    RETURNS json
+    LANGUAGE sql
+   AS $function$
+    -- uses claim without schema
+     SELECT jsi.claim_crux(claim) from claim WHERE claim_id = $1;
+    $function$
+     ;
+   CREATE OR REPLACE FUNCTION jsi.claim_crux(claim)
+    RETURNS json
+    LANGUAGE sql
+   AS $function$
+     SELECT
+       pongo.json_strip_nulls(
+             json_build_object(
+      '_type', 'claim_crux',
+      '_id', $1.claim_id,
+      'status', $1.status,
+      'status_detail', jsi.claim_status_detail($1),
+      'examiner', jsi.corpus_summary($1.adjuster_id),
+      'group', jsi.claim_group($1),
+      'lineage', $1.lineage,
+      'external_adjuster', jsi.corpus_summary($1.external_adjuster_id),
+      'claimant', jsi.corpus_summary($1.plaintiff_id),
+      'coverage_counsel', jsi.corpus_summary($1.coverage_counsel_id),
+      'line_of_business', $1.line_of_business,
+      'defense_counsel', jsi.corpus_summary($1.defense_counsel_id),
+      'restoration_firm_emergency', jsi.corpus_summary($1.restoration_firm_emergency_id),
+      'restoration_firm_repair', jsi.corpus_summary($1.restoration_firm_repair_id),
+      'industry', (SELECT to_json(ibc_code.*)
+                   FROM claim_ibc_code AS cic RIGHT JOIN ibc_code USING (industry)
+                   WHERE  cic.claim_id = $1.claim_id),
+      'coverage', $1.coverage,
+      'date_of_loss', $1.date_of_loss::date,
+      'balance', jsi.claim_balance($1),
+
+      'risk', jsi.risk_crux($1.risk_id),
+      'cause', jsi.claim_cause($1),
+      'loss', jsi.loss($1),
+      'authority', jsi.claim_authority($1),
+      'subscription_percent', $1.subscription_percent,
+      'outstanding_diary',  (SELECT json_agg(jsi.diary_entry(diary_entry)) FROM diary_entry
+                              WHERE claim_id = $1.claim_id
+                              AND diary_entry_is_outstanding(diary_entry)),
+      'transactions', (SELECT json_agg(t.t)
+                       FROM
+                        (SELECT jsi.transaction(t) AS t
+                         FROM claim_transaction AS t
+                         WHERE t.claim_id = $1.claim_id
+                         ORDER BY t.transaction_date, t.transaction_id) AS t),
+      'attachments', (SELECT json_agg(a.a)
+                       FROM
+                        (SELECT jsi.claim_attachment(a) AS a
+                         FROM attachment AS a
+                         WHERE a.claim_id = $1.claim_id
+                         ORDER BY a.date, a.attachment_id) AS a),
+      'diary', (SELECT jsi.claim_diary($1.claim_id)),
+      'timelog', (SELECT jsi.claim_timelog($1.claim_id))
+     ))
+
+   $function$
+     ;
+ #+end_src
+
+ #+RESULTS:
+ | CREATE FUNCTION |
+ |-----------------|
+ | CREATE FUNCTION |
+
+ #+BEGIN_SRC sql :results code :exports none
+ select pg_get_functiondef(oid) AS " "
+ from pg_proc
+ where proname = 'claim_status_detail';
+ #+END_SRC
+
+
+
+ #+begin_src sql
+
+  CREATE OR REPLACE FUNCTION jsi.claim_status_detail(claim)
+   RETURNS json
+   LANGUAGE sql
+  AS $function$
+    SELECT pongo.json_strip_nulls(
+      json_build_object(
+        '_type', 'claim_status_detail',
+        '_id', $1.claim_id,
+        'status', $1.status,
+        'update', (select update FROM claim_update WHERE claim_id = $1.claim_id),
+        'open_date', $1.open_date::date,
+        'date_claim_made', $1.date_claim_made::date,
+        'close_date', $1.close_date::date,
+        'reopen_date', $1.rev_date::date,
+        'claim_received_time', $1.claim_received_time,
+        'claim_acknowledged_time', $1.claim_acknowledged_time,
+        'insured_contacted_time', $1.insured_contacted_time,
+        'first_site_visit_time', $1.first_site_visit_time,
+        'denial', $1.denial,
+        'date_of_denial', $1.date_of_denial,
+        'reason_for_denial', $1.reason_for_denial,
+        'refer_to_underwriters', $1.refer_to_underwriters,
+        'open_for_recovery', CASE WHEN ($1.open_for_recovery)
+                                     THEN true
+     ELSE null
+                                END,
+        'recovery_subrogation_date', $1.recovery_subrogation_date::date,
+        'peer_reviewed', CASE WHEN ($1.peer_reviewed_date IS NOT NULL)
+                                     THEN true
+     ELSE null
+                                END,
+        'peer_reviewed_date', $1.peer_reviewed_date::date
+
+      ));
+    $function$
+
+ #+end_src
+
+ #+RESULTS:
+ | CREATE FUNCTION |
+ |-----------------|
+
+ #+BEGIN_SRC sql :results code :exports none
+ select pg_get_functiondef(oid) AS " "
+ from pg_proc
+ where proname = 'metadata';
+ #+END_SRC
+
+ #+RESULTS:
+ #+begin_src sql
+
+ CREATE OR REPLACE FUNCTION jso.metadata(claim)
+  RETURNS json
+  LANGUAGE sql
+  STABLE
+ AS $function$
+    SELECT json_strip_nulls(
+      json_build_object(
+        'status', $1.status,
+        'update', (select update FROM claim_update WHERE claim_id = $1.claim_id),
+        'denial', $1.denial,
+        'refer_to_underwriters', $1.refer_to_underwriters,
+        'open_for_recovery', $1.open_for_recovery,
+        'peer_reviewed', $1.peer_reviewed_date,
+        'lineage', $1.lineage,
+        'line_of_business', $1.line_of_business,
+        'industry_code', (SELECT to_json(ibc_code.*)
+                             FROM claim_ibc_code AS cic RIGHT JOIN ibc_code USING (industry)
+                            WHERE  cic.claim_id = $1.claim_id),
+        'coverage', $1.coverage,
+        'import', jso.import($1),
+        'over_authority', claim_over_authority($1)
+        )
+      );
+    $function$
+
+ #+end_src
+
+ #+BEGIN_SRC sql :results code :exports none
+ select pg_get_functiondef(oid) AS " ", ';' AS "   "
+ from pg_proc
+ where proname = 'claim';
+ #+END_SRC
+
+ #+RESULTS:
+ #+begin_src sql
+
+ CREATE OR REPLACE FUNCTION jso.claim(claim_id integer, json DEFAULT '{}'::json)
+  RETURNS json
+  LANGUAGE sql
+  STABLE
+ AS $function$
+  -- uses claim without schema
+   SELECT jso.claim(claim, $2) from claim WHERE claim_id = $1;
+  $function$
+   ;
+ CREATE OR REPLACE FUNCTION jso.claim(claim, _options json DEFAULT '{}'::json)
+  RETURNS json
+  LANGUAGE sql
+  STABLE
+ AS $function$
+   SELECT
+   json_strip_nulls(
+     json_build_object(
+    'claim_id', $1.claim_id,
+    'status', $1.status,
+    'status_detail', jsi.claim_status_detail($1),
+     -- Associates
+    'examiner', jso.corpus($1.adjuster_id),
+    'adjuster', jso.corpus($1.external_adjuster_id),
+    'claimant', jso.corpus($1.plaintiff_id),
+    'coverage_counsel', jso.corpus($1.coverage_counsel_id),
+    'defense_counsel', jso.corpus($1.defense_counsel_id),
+    'restoration_firm_emergency', jso.corpus($1.restoration_firm_emergency_id),
+    'restoration_firm_repair', jso.corpus($1.restoration_firm_repair_id),
+     -- Metadata
+    'metadata', jso.metadata($1),
+     -- Timeline
+     'timeline', jso.timeline($1),
+    'date_of_loss', $1.date_of_loss::date,
+    'balance', jso.balance($1),
+    'risk', jso.risk($1.risk_id),
+    'cause', jso.claim_cause($1),
+    'loss', jso.loss($1),
+    'authority', jsi.claim_authority($1),
+    'subscription_percent', $1.subscription_percent::numeric,
+    'timecards', (SELECT json_agg(sub.t) FROM (SELECT to_json(tr) AS t
+                                        FROM timecard_report AS tr
+                                       WHERE tr.claim_id = $1.claim_id
+                                       ORDER BY date) AS sub),
+    'outstanding_diary',  (SELECT json_agg(jsi.diary_entry(diary_entry)) FROM diary_entry
+
+                            WHERE diary_entry_id
+                                  IN (SELECT DISTINCT diary_entry_id
+                                        FROM diary_entry
+                                       WHERE claim_id = $1.claim_id
+                                         AND diary_entry_is_outstanding(diary_entry))),
+    'transactions', (SELECT json_agg(t.t)
+                     FROM
+                      (SELECT jso.transaction(t) AS t
+                       FROM claim_transaction AS t
+                       WHERE t.claim_id = $1.claim_id
+                       ORDER BY t.transaction_date, t.transaction_id) AS t),
+    'attachments', (SELECT json_agg(ja) FROM
+                     (SELECT jso.claim_attachment(ca) ja
+                        FROM claim_attachment AS ca
+                          WHERE ca.claim_id = $1.claim_id
+                       ORDER BY date) ob),
+    'diary', (SELECT jsi.claim_diary($1.claim_id))
+   ))
+
+ $function$
+   ;
+ CREATE OR REPLACE FUNCTION ui.claim(ui.claim)
+  RETURNS json
+  LANGUAGE sql
+ AS $function$
+       SELECT json_build_object(
+      '_type', 'ui.claim',
+      '_id', (json_build_array($1.claim_id, $1.app_user_id)),
+      'claim_id', $1.claim_id,
+      'app_user_id', $1.app_user_id,
+      'info', $1.info,
+      'balance', $1.balance,
+      'tabs', $1.tabs,
+      'history', $1.history,
+      'active_tab', $1.active_tab,
+      'data', $1.data
+     );
+   $function$
+   ;
+ CREATE OR REPLACE FUNCTION ui.claim(integer, integer)
+  RETURNS json
+  LANGUAGE sql
+ AS $function$
+
+   SELECT COALESCE(
+     (SELECT ui.claim(claim)
+      FROM ui.claim WHERE claim_id = $1 AND app_user_id = $2 LIMIT 1),
+
+     (SELECT ui.new_claim($1, $2)))
+   $function$
+   ;
+ #+end_src
+
+ #+RESULTS:
+ | CREATE FUNCTION |
+ |-----------------|
+ | CREATE FUNCTION |
+ | CREATE FUNCTION |
+ | CREATE FUNCTION |
+
+
+ #+BEGIN_SRC sql :results code :exports none
+ select pg_get_functiondef(oid) AS " ", ';' AS "   "
+ from pg_proc
+ where proname = 'timeline';
+ #+END_SRC
+ #+RESULTS:
+ #+begin_src sql
+
+ CREATE OR REPLACE FUNCTION jso.timeline(claim)
+  RETURNS json
+  LANGUAGE sql
+  STABLE
+ AS $function$
+    SELECT json_strip_nulls(
+      json_build_object(
+        'date_of_loss', $1.date_of_loss::date,
+        'date_claim_made', $1.date_claim_made::date,
+        'open_date', $1.open_date::date,
+        'close_date', $1.close_date::date,
+        'reopen_date', $1.rev_date::date,
+        'claim_received', $1.claim_received_time,
+        'claim_acknowledged', $1.claim_acknowledged_time,
+        'insured_contacted', $1.insured_contacted_time,
+        'first_site_visit', $1.first_site_visit_time,
+        'recovery_subrogation', $1.recovery_subrogation_date,
+        'peer_reviewed', $1.peer_reviewed_date,
+        'over_authority', $1.over_authority
+
+      ));
+    $function$
+   ;
+ #+end_src
+
+ #+RESULTS:
+ | CREATE FUNCTION |
+ |-----------------|

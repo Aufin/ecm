@@ -1,4 +1,311 @@
-#+TITLE: HTTPD
+#+TITLE: The Gerbil HTTPD + nginx proxy
+
+* OMG Servlets!
+
+I'm not sure why I didn't use this technique for the last 20 years as
+it's a wonderful use of lisp and servers.
+
+We'll choose a "www/" name for the folder as it seems apache or cpanel
+(did I write that?) uses.
+
+It's in =/srv/ecm/app/www=
+
+
+So the server just needs a conf file.
+
+#+begin_src conf :tangle ./ensemble.config
+  config: httpd-ensemble-v0
+  ensemble-servers: (httpd1 httpd2)
+  ensemble-request-log: #t
+  server-configuration:
+  (root: "/srv/ecm/app/www/"
+   handlers: ()
+   max-token-length: 10240
+   enable-servlets: #t
+   cache-ttl: 1.
+   listen: ("0.0.0.0:4200"))
+#+end_src
+
+#+begin_src sh
+  export PATH=/opt/gerbil/bin:"$PATH"
+
+  start_reg() {
+   # first create an ensemble cookie
+   gerbil ensemble admin cookie
+
+   # run the ensemble registry
+   gerbil ensemble registry &
+
+  }
+
+  start_httpd() {
+   # And start the httpd ensemble
+   gerbil httpd -e -c /srv/ecm/cloud/httpd/ensemble.config &
+  }
+
+  stop_httpd() {
+  # When we want it to stop
+   gerbil ensemble shutdown httpd-ensemble        
+   gerbil ensemble shutdown httpd1
+   gerbil ensemble shutdown httpd2
+  }
+
+  stop_reg() {
+      gerbil ensemble shutdown registry;
+  }
+      
+
+  move_g () { TMP=`mktemp -d /tmp/GERBIL_ecm_XXXX`; mv ~/.gerbil/ $TMP; mv /tmp/ensemble/ $TMP; }
+#+end_src
+
+#+begin_src sh
+  gerbil ensemble list servers
+2024-07-07T18:51:42Z INFO ensemble authenticated client console at (local)
+(httpd-ensemble (httpd-supervisor) (unix: "mbp.lan" "/tmp/ensemble/httpd-ensemble"))
+(httpd1 (httpd) (unix: "mbp.lan" "/tmp/ensemble/httpd1"))
+(httpd2 (httpd) (unix: "mbp.lan" "/tmp/ensemble/httpd2"))
+#+end_src
+
+
+* [[https://github.com/mighty-gerbils/gerbil/discussions/1148][The Gerbil httpd · mighty-gerbils/gerbil · Discussion #1148 · GitHub]] :website:
+
+[2024-07-07 Sun 11:54]
+
+** Article
+
+Gerbil has sported an /embedded/ httpd since v0.12; the package\\
+provides HTTP/1.1 server functionality, with dynamic handlers\\
+dispatched by a request multiplexer (Mux). The embedded httpd is quite\\
+capable, but it requires writing some code to get running and leaves\\
+several tasks to the programmer.
+
+In the v0.18.2 release cycle we are introducing a /standalone/\\
+httpd (runnable with =gerbil httpd=), which packages the embedded\\
+httpd into a (somewhat low level) web application framework\\
+distributed with Gerbil. The server can serve static files, direct\\
+requests to compiled dynamic handlers and also supports /servlets/,\\
+which are interpreted dynamic handlers from gerbil source modules\\
+residing inside the server root. See [[https://github.com/mighty-gerbils/gerbil/pull/1141][the PR]] for code details.
+
+The server also supports an ensemble supervisor that can\\
+trivially spawn a number of httpd workers bound on the same port with\\
+SO_REUSEPORT, which lets you utilize all cores in the system.
+
+Finally, as we will see below, the server is quite performant, with a\\
+performance envelope approaching high-performance servers written in C,\\
+like lighttpd.
+
+*** Configuring and running the gerbil httpd
+
+Configuring the server is quite simple. The configuration format is a\\
+flat plist, which allows you to extend it with sections for handler\\
+specific configuration without any difficulty.
+
+Here is an example configuration:
+
+#+begin_src notranslate
+ $ cat server.config
+config: httpd-v0
+root: "content"
+handlers: (("/handler" . :test/site/handler))
+enable-servlets: #t
+server-log: "/tmp/server.log"
+request-log: "/tmp/request.log"
+listen: ("127.0.0.1:8080")
+#+end_src
+
+This configuration specifies a site with the document root in\\
+=content=, enables servlets and also specifies a compiled handler for\\
+a path.
+
+Here is how an example server root looks like:
+
+#+begin_src notranslate
+ $ tree content
+content
+├── files
+│   └── hello.txt
+├── index.html
+└── servlets
+    └── hello.ss
+#+end_src
+
+Here, we have an index.html for our root, and an additional static\\
+file in files -- this could be your assets directory for instance. The\\
+server also has a servlet in =/servlets/hello.ss=.
+
+Here is what the servlet looks like:
+
+#+begin_src notranslate
+ $ cat content/servlets/hello.ss
+(import :std/net/httpd
+        :std/format)
+(export handler-init! handle-request)
+
+(def state "not initialized")
+
+(def (handler-init! cfg)
+  (set! state 'initialized))
+
+(def (handle-request req res)
+  (http-response-write res 200 '(("Content-Type" . "text/plain"))
+                       (format "hello! I am a servlet and my state is ~a~n" state)))
+#+end_src
+
+The servlet is a module, which exports a =handle-request= method for\\
+its handler, and optionally a =handler-init!= procedure called at load\\
+time with the server configuration.
+
+Our compiled dynamic handler is just the same, but it is precompiled:
+
+#+begin_src notranslate
+ $ cat site/handler.ss
+(import :std/net/httpd
+        :std/format)
+(export handler-init! handle-request)
+
+(def state "not initialized")
+
+(def (handler-init! cfg)
+  (set! state 'initialized))
+
+(def (handle-request req res)
+  (http-response-write res 200 '(("Content-Type" . "text/plain"))
+                       (format "hello! I am a dynamic handler and my state is ~a~n" state)))
+#+end_src
+
+So let's run our little site:
+
+#+begin_src notranslate
+ # first build the dynamic handler
+$ gerbil build
+
+# and run the server
+$ gerbil httpd -c server.config
+#+end_src
+
+And in another terminal we can poke it with curl:
+
+#+begin_src notranslate
+ # get the root
+$ curl http://127.0.0.1:8080/
+
+  
+    hello
+  
+  
+    hello, world!
+  
+
+# get the asset file
+$ curl http://127.0.0.1:8080/files/hello.txt
+hello, world!
+
+# get the compiled handler
+$ curl http://127.0.0.1:8080/handler
+hello! I am a dynamic handler and my state is initialized
+
+# get the servlet
+$ curl http://127.0.0.1:8080/servlets/hello.ss
+hello! I am a servlet and my state is initialized
+#+end_src
+
+*** Configuring and running the gerbil httpd ensemble
+
+The ensemble configuration is just as simple:
+
+#+begin_src notranslate
+ $ cat ensemble.config
+config: httpd-ensemble-v0
+ensemble-servers: (httpd1 httpd2)
+ensemble-request-log: #t
+server-configuration:
+(root: "content"
+ handlers: (("/handler" . :test/site/handler))
+ enable-servlets: #t
+ listen: ("127.0.0.1:8080"))
+#+end_src
+
+In this config, we specify we want two workers (httpd1 and httpd2),\\
+with request logging enabled, and the same server configuration as the\\
+standalone server.
+
+You can run the ensemble as follows:
+
+#+begin_src notranslate
+ # first create an ensemble cookie
+$ gerbil ensemble admin cookie
+
+# run the ensemble registry
+$ gerbil ensemble registry
+
+# and start the httpd ensemble
+$ gerbil httpd -e -c ensemble.config
+#+end_src
+
+*** Performance
+
+We mentioned performance, and indeed is quite good.
+
+First here is a baseline from =lighttpd-1.4.63-1ubuntu3.1=:
+
+#+begin_src notranslate
+ $ ./hey_linux_amd64 -c 10 -n 100000 http://localhost:80/index.html
+
+Summary:
+  Total:    1.1123 secs
+  Slowest:  0.0040 secs
+  Fastest:  0.0000 secs
+  Average:  0.0001 secs
+  Requests/sec: 89901.9951
+#+end_src
+
+And here is how the single worker httpd fares:
+
+#+begin_src notranslate
+ $ ./hey_linux_amd64 -c 10 -n 100000 http://localhost:8080/index.html
+
+Summary:
+  Total:    1.2072 secs
+  Slowest:  0.0173 secs
+  Fastest:  0.0000 secs
+  Average:  0.0001 secs
+  Requests/sec: 82834.8050
+#+end_src
+
+And here is an ensemble with two workers:
+
+#+begin_src notranslate
+ $ ./hey_linux_amd64 -c 10 -n 100000 http://localhost:8080/index.html
+
+Summary:
+  Total:    1.0287 secs
+  Slowest:  0.0196 secs
+  Fastest:  0.0000 secs
+  Average:  0.0001 secs
+  Requests/sec: 97213.7561
+#+end_src
+
+Notice the performance increase; it is not linear because the load\\
+test is running in the same laptop so there is competition between the\\
+two, but it's there and edges comfortably over what you can get with\\
+lighttpd. Further exploring the performance envelope with multiple\\
+workers would require running the ensemble on a different box than the\\
+load tester.
+* MacOS create root =/srv=
+#+begin_src sh
+  # On Mac 
+  sudo mkdir -p /System/Volumes/Data/srv/ecm
+  sudo chown -R drewc /System/Volumes/Data/srv
+
+  #IMPORTANT The field separate in synthetic.conf must be a tab
+  #character. The most common cause of problems with this is editors
+  #that insert a sequence of spaces when you press the Tab key.
+
+  echo -e srv'\t'System/Volumes/Data/srv | sudo tee /etc/synthetic.conf
+  sudo shutdown -r now
+  
+#+end_src
 
 * Mutli Processes
 
@@ -6,7 +313,217 @@
     processes if they all set SO_REUSEPORT before binding the port.
     This option permits multiple instances of a program to each
     receive UDP/IP multicast or broadcast datagrams destined for the
-    bound port.
+    bound port
 
-#+begin_src scheme :tangle ,.
+
+* Nginx
+
+#+begin_src conf :tangle ../../etc/nginx.conf
+  upstream ecm-server {
+  	server 10.42.0.13:4242;
+          server localhost:4242 backup;
+  }
+  upstream local-ecm-server {
+          server localhost:4242;
+  }
+
+  upstream ecm-login {
+     server localhost:8080;
+  }	  
+  	
+  upstream ecm-reports {
+     server localhost:8078;
+  }
+
+  upstream ecm-beta {
+    server gamma.maxwellclaims.net:80;
+  }
+
+
+  upstream drewc-mbp {
+    server mbp.lan:4200;
+  }
+  server {
+       listen 80 default_server;
+       listen [::]:80 default_server;
+       server_name _;
+
+        proxy_connect_timeout       60000;
+        proxy_send_timeout          60000;
+        proxy_read_timeout          600000s;
+       send_timeout                60000;
+
+      client_max_body_size 0;
+
+      location /ecm/report/api/ {
+           proxy_pass http://local-ecm-server;
+           proxy_set_header X-Real-IP  $remote_addr;
+           proxy_set_header X-Forwarded-For $remote_addr;
+           proxy_set_header Host $host;
+      }
+      location /ecm/new/reports/ {
+           proxy_pass http://ecm-reports;
+           proxy_set_header X-Real-IP  $remote_addr;
+           proxy_set_header X-Forwarded-For $remote_addr;
+           proxy_set_header Host $host;
+      }
+        location /ecm/login {
+         proxy_pass http://ecm-login;
+         proxy_set_header X-Real-IP  $remote_addr;
+          proxy_set_header X-Forwarded-For $remote_addr;
+            proxy_set_header Host $host;
+      }
+
+        location / {
+              proxy_pass http://ecm-server;
+           proxy_set_header X-Real-IP  $remote_addr;
+             proxy_set_header X-Forwarded-For $remote_addr;
+            proxy_set_header Host $host;
+        }
+
+  }
+
+  server {
+      server_name 825.maxwellclaims.net 
+
+        proxy_connect_timeout       60000;
+        proxy_send_timeout          60000;
+        proxy_read_timeout          600000s;
+       send_timeout                60000;
+
+      client_max_body_size 0;
+
+
+        location / {
+              proxy_pass http://ecm-beta;
+           proxy_set_header X-Real-IP  $remote_addr;
+             proxy_set_header X-Forwarded-For $remote_addr;
+            proxy_set_header Host $host;
+        }
+
+
+
+      # listen [::]:443 ssl ipv6only=on; # managed by Certbot
+      listen 443 ssl; # managed by Certbot
+      ssl_certificate /etc/letsencrypt/live/ecm.maxwellclaims.net/fullchain.pem; # managed by Certbot
+      ssl_certificate_key /etc/letsencrypt/live/ecm.maxwellclaims.net/privkey.pem; # managed by Certbot
+      include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
+      ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
+
+
+
+
+
+
+  }
+
+
+  server {
+      server_name 825.maxwellclaims.net webinsure.maxwellclaims.net ecm.maxwellclaims.net; # managed by Certbot
+
+        proxy_connect_timeout       60000;
+        proxy_send_timeout          60000;
+        proxy_read_timeout          600000s;
+       send_timeout                60000;
+
+      client_max_body_size 0;
+
+      location /ecm/report/api/ {
+           proxy_pass http://local-ecm-server;
+           proxy_set_header X-Real-IP  $remote_addr;
+           proxy_set_header X-Forwarded-For $remote_addr;
+           proxy_set_header Host $host;
+      }
+      location /ecm/new/reports/ {
+           proxy_pass http://ecm-reports;
+           proxy_set_header X-Real-IP  $remote_addr;
+           proxy_set_header X-Forwarded-For $remote_addr;
+           proxy_set_header Host $host;
+      }
+        location /ecm/login {
+         proxy_pass http://ecm-login;
+         proxy_set_header X-Real-IP  $remote_addr;
+          proxy_set_header X-Forwarded-For $remote_addr;
+            proxy_set_header Host $host;
+      }
+      location /ecm/drewc/ {
+         rewrite ^/ecm/drewc(.*)$ $1 break;
+          proxy_pass http://drewc-mbp;
+           proxy_set_header X-Real-IP  $remote_addr;
+             proxy_set_header X-Forwarded-For $remote_addr;
+            proxy_set_header Host $host;
+      }
+        location /beta/ {
+              proxy_pass http://ecm-beta;
+           proxy_set_header X-Real-IP  $remote_addr;
+             proxy_set_header X-Forwarded-For $remote_addr;
+            proxy_set_header Host $host;
+        }
+   	  location /assets/ {
+              proxy_pass http://ecm-beta/assets/;
+           proxy_set_header X-Real-IP  $remote_addr;
+             proxy_set_header X-Forwarded-For $remote_addr;
+            proxy_set_header Host $host;
+        }
+   	  location /rpc/ {
+              proxy_pass http://ecm-beta/rpc/;
+           proxy_set_header X-Real-IP  $remote_addr;
+             proxy_set_header X-Forwarded-For $remote_addr;
+            proxy_set_header Host $host;
+        }
+   	  location /report/ {
+              proxy_pass http://ecm-beta/report/;
+           proxy_set_header X-Real-IP  $remote_addr;
+             proxy_set_header X-Forwarded-For $remote_addr;
+            proxy_set_header Host $host;
+        }
+
+
+
+
+
+        location / {
+              proxy_pass http://ecm-server;
+           proxy_set_header X-Real-IP  $remote_addr;
+             proxy_set_header X-Forwarded-For $remote_addr;
+            proxy_set_header Host $host;
+        }
+
+
+
+      listen [::]:443 ssl ipv6only=on; # managed by Certbot
+      listen 443 ssl; # managed by Certbot
+      ssl_certificate /etc/letsencrypt/live/ecm.maxwellclaims.net/fullchain.pem; # managed by Certbot
+      ssl_certificate_key /etc/letsencrypt/live/ecm.maxwellclaims.net/privkey.pem; # managed by Certbot
+      include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
+      ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
+
+
+
+
+
+
+  }
+
+  # server {
+  #    if ($host = webinsure.maxwellclaims.net) {
+  #        return 301 https://$host$request_uri;
+  #    } # managed by Certbot
+
+
+  #    if ($host = ecm.maxwellclaims.net) {
+  #        return 301 https://$host$request_uri;
+  #    } # managed by Certbot
+
+
+  #     listen 80 ;
+  #     listen [::]:80 ;
+  #    server_name webinsure.maxwellclaims.net ecm.maxwellclaims.net;
+  #    return 404; # managed by Certbot
+
+
+
+
+  #}
+
 #+end_src

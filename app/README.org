@@ -16,6 +16,41 @@ here.
 Most of the details are taken care of [[file:/srv/ecm/cloud/httpd/README.org][in the cloud]] so we'll look at
 the UI details mostly.
 
+* The WWW user Init!
+
+  Every time a user starts the application up there is an =init.ss=
+  file that initializes
+  
+#+begin_src scheme :tangle www/init.ss
+
+  ;; What I thought should be here is upstream in the cloud
+
+#+end_src
+
+* The runtime meta logic
+
+ 1) The _only_ entry point is the [[file:/srv/ecm/app/www/index.html::<!DOCTYPE html>][index.html]] It does some JS and css
+    loading but is essentially a blank canvas that we use to start a
+    sketch. The ~<div id="EcmSPA" data-uri="init.html"> ... </div>~
+    part is the sketch.
+ 
+ 2) That loads the SPA framework AKA paintbrushes. [[file:/srv/ecm/app/www/spa/README.org][Here]] are the
+    details.
+
+ 3) When that is loaded, and the document is as well, we then [[file:/srv/ecm/app/www/init.html::<div
+     id="ecmBody">][init.html]]'ize. This is where we load the paint essentially.
+
+
+ 4) "Finally" the [[file:/srv/ecm/app/www/main.html::<div id="ecmMain">][main.html]] is loaded and the painting starts.
+ 
+
+
+
+
+* The Database
+
+
+
 
 * The =SPA= files
 
@@ -26,73 +61,20 @@ We want to incorporate it but also keep it free for use in other projects.
 
 This is where a subtree comes in.
 
-** Subtree and Subfolder
-
-I only want the =./spa/= folder as a part of the subtree.
-
-This is doable!
-
- 1) Add the =remote=
-
+ 1) Add the remote
+    
     #+begin_src sh
       git remote add ecm-spa git@github.com:Aufin/ecm-spa.git
     #+end_src
 
- 2) Checkout =remote main/master= as a branch
-
+ 2)  Add the subtree
     #+begin_src sh
-      git fetch ecm-spa ; git checkout -b ecm-spa-main ecm-spa/main
+      git subtree add --prefix app/www/spa ecm-spa main
     #+end_src
 
- 3) Split the =remote spa/ subtree= into another branch: =ecm-spa-sub=
+    
 
-    #+begin_src sh
-      git subtree split -P spa -b ecm-spa-sub --rejoin --annotate='(ecm-spa) '
-    #+end_src
-
- 4) Back to the =local main/master=
-
-    #+begin_src sh
-      git checkout main
-    #+end_src
-
- 5) Make the =local subtree= from that =subtree branch=
-
-    #+begin_src sh
-      git subtree add -P app/www/spa ecm-spa-sub
-    #+end_src
-
-
- Now trying to propagate a change from this repo make to the master one.
-
-   #+begin_src sh
-     echo This is a subtree from a subtree > src/SPA/README.org
-     git add src/spa/README.org
-     git commit -m "Trying a subtree->subtree->main propa"
-   #+end_src
-
-   1) Push the subtree back to the other split subtree
-
-      #+begin_src sh
-	git subtree push -P src/spa . ecm-spa-sub
-      #+end_src
-
-   2) Checkout the main and pull!
-
-      #+begin_src sh
-	git branch ecm-spa-main -u ecm-spa/main
-	git checkout ecm-spa-main
-	git subtree pull -P spa/ . ecm-spa-sub --squash
-      #+end_src
-
-   3) Push it back upstream
-
-      #+begin_src sh
-	git push ecm-spa HEAD:main
-      #+end_src
-
-* Managers and Executives: The "Admin" portion
-
+ 
 
 
 

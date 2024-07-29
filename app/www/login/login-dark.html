@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>Login - Maxwell Claims</title>
+		<!-- <link rel="icon" href="img/favicon.ico"> -->
+		<!-- CSS FILES -->
+		<link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/uikit@latest/dist/css/uikit.min.css">
+		<!-- <link rel="stylesheet" type="text/css" href="css/login-dark.css"> -->
+		<style>
+		  
+		  body.login {
+		      background-image: url('https://www.maxwellclaims.net/wp-content/uploads/2015/10/burrard-bridge2.jpg');
+		      background-position: center center;
+		      background-repeat: no-repeat;
+		      background-size: cover;
+		  }
+
+		  h1 {
+		      position: absolute;
+		      top: 0;
+		      opacity: 0.75;
+		  }
+
+		  .ecm-note {
+		      position: absolute;
+		      top: 10vh;
+		    }
+		</style>
+	</head>
+	<body class="login uk-cover-container uk-background-secondary uk-flex uk-flex-center uk-flex-middle uk-height-viewport uk-overflow-hidden uk-light" data-uk-height-viewport>
+		<!-- overlay -->
+		<div class="uk-position-cover uk-overlay-primary"></div>
+		<!-- /overlay -->
+		<div class="uk-position-bottom-center uk-position-small uk-visible@m uk-position-z-index">
+		  <span class="uk-text-small uk-text-muted">© 2023 Aufin Shatranj Trading - <a href="mailto:me@drewc.ca">Created by DrewC </a> | Built with <a href="https://cons.io/" title="" target="_blank" data-uk-tooltip="Gerbil Scheme" aria-expanded="false"> <img src="/ecm/login/gerbil-logo.svg" width="20" alt="Gerbil Scheme" style="position:relative;top:-5px"> </a></span>
+		</div>
+		<h1 class="uk-text-center uk-margin">Login: Electronic Claims Manager</h1>
+		<!-- Notifications -->
+		<div id="UnknownError" class="ecm-note uk-alert-danger" uk-alert hidden>
+		  <a href class="uk-alert-close" uk-close></a>
+		  <p>An Unknown Error has occured. Please contact an administrator.</p>
+		  <code style="color: #f0506e;"> 500 </code>
+		</div>
+
+
+		<div class="uk-width-medium uk-padding-small uk-position-z-index" uk-scrollspy="cls: uk-animation-fade">
+			
+		  <div class="uk-text-center uk-margin"> </div>
+		  <div id="Invalid" class="uk-alert-danger" uk-alert style="display:none">
+		    <a href class="uk-alert-close" uk-close></a>
+		    <p>Invalid Username or Password</p>
+		  </div>
+
+		  <div class="uk-text-center uk-margin" style="padding: 15px; background-color: white; border-radius: 25px;"><img src="/ecm/login/logo.jpg" alt="Logo" class="logo-img"></div>
+
+
+			<!-- login -->
+		  <form class="toggle-class" action="#" method="POST" id="loginForm">
+		    <fieldset class="uk-fieldset">
+		      <div class="uk-margin-small">
+			<div class="uk-inline uk-width-1-1">
+			  <span class="uk-form-icon uk-form-icon-flip" data-uk-icon="icon: user"></span>
+			  <input name="u" class="uk-input uk-border-pill" required placeholder="Username" type="text">
+			</div>
+		      </div>
+		      <div class="uk-margin-small">
+			<div class="uk-inline uk-width-1-1">
+			  <span class="uk-form-icon uk-form-icon-flip" data-uk-icon="icon: lock"></span>
+			  <input name="p" class="uk-input uk-border-pill" required placeholder="Password" type="password">
+			</div>
+		      </div>
+		      <div class="uk-margin-small">
+			<label><input name="keep" class="uk-checkbox" type="checkbox"> Keep me logged in</label>
+		      </div>
+		      <div class="uk-margin-bottom">
+			<button type="submit" class="uk-button uk-button-primary uk-border-pill uk-width-1-1">LOG IN</button>
+		      </div>
+		    </fieldset>
+		  </form>
+			<!-- /login -->
+
+		  <!-- recover password -->
+		  <div class="toggle-class" hidden>
+		  <div class="uk-text-center uk-margin" uk-spinner="ratio: 3" id="recoverSpinner" style="width:100%" hidden></div>
+		  
+		  <div class="uk-alert-success" uk-alert hidden id="recoverSuccess">
+		    <a href class="uk-alert-close" uk-close></a>
+		    <p>Email was sent. <ul>
+			<li>If you do not see it after a while check the SPAM folder.</li>
+			<li>If it still has not appeared please contact an administrator.</li>
+		    </ul></p>
+		  </div>
+		  <div id="recoverNotFound" class="uk-alert-danger" uk-alert hidden>
+		    <a href class="uk-alert-close" uk-close></a>
+		    <p>No account associated with this email address.</p>
+		  </div>
+
+
+		  <form id="recoverForm" action="#">
+		    <div class="uk-margin-small">
+		      <div class="uk-inline uk-width-1-1">
+			<span class="uk-form-icon uk-form-icon-flip" data-uk-icon="icon: mail"></span>
+			<input id="recoverInput" class="uk-input uk-border-pill"
+			       placeholder="E-mail" required type="text">
+		      </div>
+		    </div>
+		    <div class="uk-margin-bottom">
+		      <button type="submit"
+			      class="uk-button uk-button-primary uk-border-pill uk-width-1-1">Send Recovery Email</button>
+		    </div>
+		  </form>
+		  </div>
+		  <!-- /recover password -->
+		  
+		  <!-- action buttons -->
+		  <div>
+		    <div class="uk-text-center">
+		      <a class="uk-link-reset uk-text-small toggle-class" data-uk-toggle="target: .toggle-class ;animation: uk-animation-fade">Forgot username or password?</a>
+		      <a class="uk-link-reset uk-text-small toggle-class" data-uk-toggle="target: .toggle-class ;animation: uk-animation-fade" hidden><span data-uk-icon="arrow-left"></span> Back to Login</a>
+		    </div>
+		  </div>
+		  <!-- action buttons -->
+		</div>
+		
+		<!-- JS FILES -->
+		<script src="https://cdn.jsdelivr.net/npm/uikit@latest/dist/js/uikit.min.js"></script>
+		<script src="/ecm/login/login.js"></script>
+		<script src="https://cdn.jsdelivr.net/npm/uikit@latest/dist/js/uikit-icons.min.js"></script>
+	</body>
+</html>

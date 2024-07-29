@@ -1,0 +1,96 @@
+:PROPERTIES:
+:ID:       cd17ab6d-13c3-4fa9-9d2f-4e6bd1466ae0
+:END:
+#+title: Claims
+
+#+PROPERTY: header-args:sql :engine postgres :cmdline "\"host=db.ecm.lan port=5432 user=maxclaims dbname=maxclaims\""
+
+All claims also have a [[id:e9f805e7-9377-4091-9f3b-9b4769bbd2d9][Risk]]
+* Database
+
+
+  #+BEGIN_SRC sql :results code :exports none
+  select pg_get_functiondef(oid)||';' AS " "
+  from pg_proc
+  where proname = 'claim_crux';
+  #+END_SRC
+
+  #+RESULTS:
+  #+begin_src sql
+
+  CREATE OR REPLACE FUNCTION jsi.claim_crux(claim_id integer)
+   RETURNS json
+   LANGUAGE sql
+  AS $function$
+   -- uses claim without schema
+    SELECT jsi.claim_crux(claim) from claim WHERE claim_id = $1;
+   $function$
+  ;
+  CREATE OR REPLACE FUNCTION jsi.claim_crux(claim)
+   RETURNS json
+   LANGUAGE sql
+  AS $function$
+       SELECT
+	 pongo.json_strip_nulls(
+	       json_build_object(
+	'_type', 'claim_crux',
+	'_id', $1.claim_id,
+	'status', $1.status,
+	'status_detail', jsi.claim_status_detail($1),
+	'label', $1.label,
+	'examiner', jsi.corpus_summary($1.adjuster_id),
+	'group', jsi.claim_group($1),
+	'lineage', $1.lineage,
+	'external_adjuster', jsi.corpus_summary($1.external_adjuster_id),
+	'claimant', jsi.corpus_summary($1.plaintiff_id),
+	'coverage_counsel', jsi.corpus_summary($1.coverage_counsel_id),
+	'line_of_business', $1.line_of_business,
+	'defense_counsel', jsi.corpus_summary($1.defense_counsel_id),
+	'restoration_firm_emergency', jsi.corpus_summary($1.restoration_firm_emergency_id),
+	'restoration_firm_repair', jsi.corpus_summary($1.restoration_firm_repair_id),
+	'industry', (SELECT to_json(ibc_code.*)
+		     FROM claim_ibc_code AS cic RIGHT JOIN ibc_code USING (industry)
+		     WHERE  cic.claim_id = $1.claim_id),
+	'coverage', $1.coverage,
+	'date_of_loss', $1.date_of_loss::date,
+	'balance', jsi.claim_balance($1),
+
+	'risk', jsi.risk_crux($1.risk_id),
+	'cause', jsi.claim_cause($1),
+	'loss', jsi.loss($1),
+	'authority', jsi.claim_authority($1),
+	'subscription_percent', $1.subscription_percent,
+	'outstanding_diary',  (SELECT json_agg(jsi.diary_entry(diary_entry)) FROM diary_entry
+				WHERE claim_id = $1.claim_id
+				AND diary_entry_is_outstanding(diary_entry)),
+	'transactions', (SELECT json_agg(t.t)
+			 FROM
+			  (SELECT jsi.transaction(t) AS t
+			   FROM claim_transaction AS t
+			   WHERE t.claim_id = $1.claim_id
+			   ORDER BY t.transaction_date, t.transaction_id) AS t),
+	'attachments', (SELECT json_agg(a.a)
+			 FROM
+			  (SELECT jsi.claim_attachment(a) AS a
+			   FROM attachment AS a
+			   WHERE a.claim_id = $1.claim_id
+			   ORDER BY a.date, a.attachment_id) AS a),
+	'diary', (SELECT jsi.claim_diary($1.claim_id)),
+	'timelog', (SELECT jsi.claim_timelog($1.claim_id))
+       ))
+
+     $function$
+  ;
+  #+end_src
+
+#+begin_src sql
+  \df jsi.claim_crux
+#+end_src
+
+#+RESULTS:
+| List of functions |            |                  |                     |      |
+|-------------------+------------+------------------+---------------------+------|
+| Schema            | Name       | Result data type | Argument data types | Type |
+| jsi               | claim_crux | json             | claim               | func |
+| jsi               | claim_crux | json             | claim_id integer    | func |
+

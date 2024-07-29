@@ -1,0 +1,659 @@
+#+TITLE: Person
+
+NONONO+PROPERTY: header-args:sql :engine postgres :cmdline "\"host=db.ecm.lan port=5432 user=maxclaims dbname=maxclaims\""
+
+
+#+PROPERTY: header-args:sql :engine postgres :cmdline "\"host=maxbakuntu.lan port=5432 user=maxclaims dbname=maxclaims\""
+
+#+begin_src sql 
+    SELECT max(open_date) FROM claim;
+#+end_src
+
+#+RESULTS:
+| max                 |
+|---------------------|
+| 2024-06-24 18:47:44 |
+
+* Overview
+
+People and companies and other entities that are person or group
+related are all stored in the person table along with their "primary"
+address.
+
+* The =upsert(person, json)= function
+
+#+begin_src sql
+  CREATE OR REPLACE FUNCTION upsert(person, json)
+  RETURNS person LANGUAGE PLPGSQL AS $$
+  DECLARE
+   isCompany BOOL := FALSE;
+   person_id INT;
+   up_json json;
+   tmp_json json;
+   up_person person;
+   cols text[];
+   vals text[];
+   query text;
+  BEGIN
+
+  -- Is this an update? If there's a person it, yes it is.
+  SELECT COALESCE($1.person_id, CAST($2->>'person_id' AS INT))
+   	 INTO person_id;
+
+
+  -- Is this a company? 
+   SELECT $1.company_flag IS NOT NULL OR $2->>'company_flag' != 'false' INTO isCompany;
+
+  -- If this is an insert then any empty strings passed are not
+  -- inserted. So remove them and make a single "record".
+
+   IF (person_id IS NULL) THEN
+
+    -- First the name
+    SELECT json_object_agg((pair).key, (pair).value)
+      INTO tmp_json
+       FROM (SELECT json_each($2->'name') as pair) sp
+       WHERE (pair).value::text != '""';
+
+    up_person := json_populate_record($1, tmp_json);
+
+    --Then the address
+
+    SELECT json_object_agg((pair).key, (pair).value)
+      INTO tmp_json
+       FROM (SELECT json_each($2->'address') as pair) sp
+       WHERE (pair).value::text != '""';
+
+    up_person := json_populate_record(up_person, tmp_json);
+
+    up_json := json_strip_nulls(to_json(up_person));
+
+    -- Now all the json props are also insert columns.
+
+    SELECT (select array_agg(format('%I', key)) INTO cols FROM json_each(up_json));
+    SELECT (select array_agg(format('$1.%I', key)) INTO vals FROM json_each(up_json));
+
+    query := format('INSERT INTO person(%s) VALUES (%s) RETURNING (person).*',
+    	     array_to_string(cols, ','), array_to_string(vals, ','));
+
+    EXECUTE query USING up_person INTO up_person;
+
+   
+   END IF;			
+
+
+  RAISE NOTICE 'Upsert person_id: %, isCompany %, up_json %, up % \n %'
+        , person_id, isCompany, up_json, up_person, query ;
+  RETURN up_person;
+  END;
+
+  $$;
+
+#+end_src
+
+#+RESULTS:
+| CREATE FUNCTION |
+|-----------------|
+
+#+begin_src sql
+  CREATE TABLE _savePerson(
+   person person DEFAULT null::person,
+   json json
+  );
+  INSERT INTO _savePerson(json) VALUES
+   ('{"company_flag":false,"name":{"title":"","first_name":"Keith","middle_name":"","last_name":"Moon","suffix":"","company_name":"","error":[]},"address":{}}');
+  INSERT INTO _savePerson(json) VALUES
+   ('{"company_flag":true,"name":{"company_name":"England MNT"},"address":{"country":"GB","address1":"Wembly Statdium","province":"ENG","city":"London"}}');
+#+end_src
+
+#+RESULTS:
+| CREATE TABLE |
+|--------------|
+| INSERT 0 1   |
+
+* /Description/ ~\d person~
+
+#+begin_src sql :results verbatim :wrap example
+    \d person
+#+end_src
+
+#+RESULTS:
+#+begin_example
+Table "public.person"
+Column	Type	Collation	Nullable	Default
+person_id	integer		not null	nextval('person_PERSON_ID_seq'::text::regclass)
+parent_person_id	integer			
+first_name	text			
+last_name	text			
+company_name	text			
+address1	text			
+address2	text			
+city	text			
+province_state_id	integer			
+postal_zip_code	text			
+home_phone	text			
+work_phone	text			
+fax_phone	text			
+cell_phone	text			
+email_address	text			
+birth_date	timestamp without time zone			
+date_added	timestamp without time zone			
+date_modified	timestamp without time zone			
+company_flag	integer			
+user_id	text			
+user_password	text			
+postal_code	text			
+middle_name	text			
+title	text			
+suffix	text			
+address_id	integer			
+country	text			
+province	text			
+full_name	text			generated always as (TRIM(BOTH FROM (TRIM(BOTH FROM (COALESCE(first_name, ''::text) || ' '::text) || COALESCE(last_name, ''::text)) || ' '::text) || COALESCE(company_name, ''::text))) stored
+short_name	text			generated always as (
+CASE
+    WHEN (first_name IS NULL OR first_name = ''::text) AND (last_name IS NULL OR last_name = ''::text) THEN company_name
+    ELSE TRIM(BOTH FROM TRIM(BOTH FROM (COALESCE(first_name, ''::text) || ' '::text) || COALESCE(last_name, ''::text)))
+END) stored
+full_name_ts	text			generated always as (soundex_tsvector(TRIM(BOTH FROM (TRIM(BOTH FROM (COALESCE(first_name, ''::text) || ' '::text) || COALESCE(last_name, ''::text)) || ' '::text) || COALESCE(company_name, ''::text)))) stored
+address	text			generated always as ((((((
+CASE
+    WHEN address1 IS NOT NULL AND address1 <> ''::text THEN address1
+    ELSE ''::text
+END ||
+CASE
+    WHEN address2 IS NOT NULL AND address2 <> ''::text THEN ', '::text || address2
+    ELSE ''::text
+END) ||
+CASE
+    WHEN city IS NOT NULL AND city <> ''::text THEN ', '::text || city
+    ELSE ''::text
+END) ||
+CASE
+    WHEN province IS NOT NULL AND province <> ''::text THEN ', '::text || province
+    ELSE ''::text
+END) ||
+CASE
+    WHEN postal_code IS NOT NULL AND postal_code <> ''::text THEN ', '::text || postal_code
+    ELSE ''::text
+END) ||
+CASE
+    WHEN postal_zip_code IS NOT NULL AND postal_zip_code <> ''::text THEN ', '::text || postal_zip_code
+    ELSE ''::text
+END) ||
+CASE
+    WHEN country IS NOT NULL AND country <> ''::text THEN ', '::text || country
+    ELSE ''::text
+END) stored
+Indexes:
+    "person_pkey" PRIMARY KEY, btree (person_id)
+    "person_company_name_trgm_idx" gist (company_name gist_trgm_ops)
+    "person_first_name_trgm_idx" gist (first_name gist_trgm_ops)
+    "person_last_name_trgm_idx" gist (last_name gist_trgm_ops)
+    "person_person_name_trgm_idx" gist (btrim((btrim((COALESCE(first_name, ''::text) || ' '::text) || COALESCE(last_name, ''::text)) || ' '::text) || COALESCE(company_name, ''::text)) gist_trgm_ops)
+    "person_person_short_name_trgm_idx" gist (btrim(btrim((COALESCE(first_name, ''::text) || ' '::text) || COALESCE(last_name, ''::text))) gist_trgm_ops)
+    "person_province_id" btree (province_state_id)
+Foreign-key constraints:
+    "person_country_fkey" FOREIGN KEY (country) REFERENCES country(code)
+    "person_province_country_fkey" FOREIGN KEY (province, country) REFERENCES province(code, country)
+    "person_province_state_id_fkey" FOREIGN KEY (province_state_id) REFERENCES province_state(province_state_id)
+    "person_suffix_fkey" FOREIGN KEY (suffix) REFERENCES person_suffix(suffix)
+    "person_title_fkey" FOREIGN KEY (title) REFERENCES person_title(title)
+Referenced by:
+    TABLE "policy" CONSTRAINT "$1" FOREIGN KEY (agent_id) REFERENCES person(person_id)
+    TABLE "contract" CONSTRAINT "$1" FOREIGN KEY (agency_id) REFERENCES person(person_id)
+    TABLE "app_user" CONSTRAINT "$1" FOREIGN KEY (person_id) REFERENCES person(person_id)
+    TABLE "policy" CONSTRAINT "$2" FOREIGN KEY (insured_id) REFERENCES person(person_id)
+    TABLE "contract" CONSTRAINT "$2" FOREIGN KEY (insurance_company_id) REFERENCES person(person_id)
+    TABLE "claim" CONSTRAINT "$2" FOREIGN KEY (adjuster_id) REFERENCES person(person_id)
+    TABLE "claim_transaction" CONSTRAINT "$2" FOREIGN KEY (payee_id) REFERENCES person(person_id)
+    TABLE "policy" CONSTRAINT "$3" FOREIGN KEY (company_id) REFERENCES person(person_id)
+    TABLE "claim" CONSTRAINT "$3" FOREIGN KEY (plaintiff_id) REFERENCES person(person_id)
+    TABLE "policy" CONSTRAINT "$4" FOREIGN KEY (underwriter_id) REFERENCES person(person_id)
+    TABLE "policy" CONSTRAINT "$5" FOREIGN KEY (branch_id) REFERENCES person(person_id)
+    TABLE "policy" CONSTRAINT "$6" FOREIGN KEY (agency_office_id) REFERENCES person(person_id)
+    TABLE "app_adjuster" CONSTRAINT "app_adjuster_person_id_fkey" FOREIGN KEY (person_id) REFERENCES person(person_id)
+    TABLE "app_user_agency" CONSTRAINT "app_user_agency_agency_id_fkey" FOREIGN KEY (agency_id) REFERENCES person(person_id)
+    TABLE "app_user_syndicate" CONSTRAINT "app_user_syndicate_syndicate_id_fkey" FOREIGN KEY (syndicate_id) REFERENCES person(person_id)
+    TABLE "claim" CONSTRAINT "claim_adjuster_office_id_fkey" FOREIGN KEY (adjuster_office_id) REFERENCES person(person_id)
+    TABLE "claim" CONSTRAINT "claim_coverage_counsel_id_fkey" FOREIGN KEY (coverage_counsel_id) REFERENCES person(person_id)
+    TABLE "claim" CONSTRAINT "claim_defense_counsel_id_fkey" FOREIGN KEY (defense_counsel_id) REFERENCES person(person_id)
+    TABLE "claim" CONSTRAINT "claim_external_adjuster_id_fkey" FOREIGN KEY (external_adjuster_id) REFERENCES person(person_id)
+    TABLE "claim" CONSTRAINT "claim_restoration_firm_emergency_id_fkey" FOREIGN KEY (restoration_firm_emergency_id) REFERENCES person(person_id)
+    TABLE "claim" CONSTRAINT "claim_restoration_firm_id_fkey" FOREIGN KEY (restoration_firm_id) REFERENCES person(person_id)
+    TABLE "claim" CONSTRAINT "claim_restoration_firm_repair_id_fkey" FOREIGN KEY (restoration_firm_repair_id) REFERENCES person(person_id)
+    TABLE "claim_transaction" CONSTRAINT "claim_transaction_recipient_id_fkey" FOREIGN KEY (recipient_id) REFERENCES person(person_id)
+    TABLE "contract" CONSTRAINT "contract_london_broker_id_fkey" FOREIGN KEY (london_broker_id) REFERENCES person(person_id)
+    TABLE "contract" CONSTRAINT "contract_syndicate_id_fkey" FOREIGN KEY (syndicate_id) REFERENCES person(person_id)
+    TABLE "cww_import_office" CONSTRAINT "cww_import_office_person_id_fkey" FOREIGN KEY (person_id) REFERENCES person(person_id)
+    TABLE "cww_import_underwriter" CONSTRAINT "cww_import_underwriter_person_id_fkey" FOREIGN KEY (person_id) REFERENCES person(person_id)
+    TABLE "lineage_coverholder" CONSTRAINT "lineage_coverholder_person_id_fkey" FOREIGN KEY (person_id) REFERENCES person(person_id)
+    TABLE ""user"."user"" CONSTRAINT "user_person_id_fkey" FOREIGN KEY (person_id) REFERENCES person(person_id)
+Triggers:
+    hstore_row_history AFTER INSERT OR DELETE OR UPDATE ON person FOR EACH ROW EXECUTE FUNCTION hstore_row_history()
+    person_name_update_similarity BEFORE UPDATE ON person FOR EACH ROW EXECUTE FUNCTION person_name_update_similarity_trigger()
+    record_movement AFTER INSERT OR DELETE OR UPDATE ON person FOR EACH ROW EXECUTE FUNCTION record_movement('person_id')
+    z_backport_country_and_province BEFORE INSERT OR UPDATE ON person FOR EACH ROW EXECUTE FUNCTION backport_country_and_province()
+    z_refresh_person_name AFTER INSERT OR UPDATE ON person FOR EACH STATEMENT EXECUTE FUNCTION refresh_person_name()
+#+end_example
+
+* /Indexes/ ~ON person~
+
+#+begin_src sql
+    CREATE INDEX IF NOT EXISTS person_province_id ON person (province_state_id)
+#+end_src
+
+* Generated names and tsvectors
+
+#+begin_src sql
+    SELECT 42;
+#+end_src
+
+#+RESULTS:
+| ?column? |
+|----------|
+|       42 |
+
+  #+BEGIN_SRC sql :results code :exports none
+  select pg_get_functiondef(oid) AS " " from pg_proc where proname = 'person_short_name';
+  #+END_SRC
+
+  #+RESULTS:
+  #+begin_src sql
+
+  CREATE OR REPLACE FUNCTION public.person_short_name(person_id integer)
+   RETURNS text
+   LANGUAGE sql
+   STABLE
+  AS $function$
+	 SELECT person_short_name(person.*) FROM person WHERE person_id = $1;
+  $function$
+
+  CREATE OR REPLACE FUNCTION public.person_short_name(person)
+   RETURNS text
+   LANGUAGE sql
+   STABLE
+  AS $function$
+  SELECT CASE WHEN (($1.first_name IS NULL OR $1.first_name = '')
+		    AND ($1.last_name IS NULL OR $1.last_name = ''))
+	   THEN $1.company_name
+	     ELSE trim (both from trim(both from COALESCE($1.first_name, '') 
+				       || ' '::text || 
+				       COALESCE ($1.last_name, '')))
+	   END;
+   $function$
+
+  #+end_src
+
+#+begin_src sql
+     ALTER TABLE person ADD COLUMN full_name text
+     GENERATED ALWAYS AS (
+      trim (both from trim(both from COALESCE(first_name, '') 
+      || ' '::text || 
+      COALESCE (last_name, '')) 
+      || ' ' ::text || 
+      COALESCE (company_name, ''))
+    )  STORED;
+#+end_src
+#+begin_src sql
+   ALTER TABLE person ADD COLUMN short_name text
+   GENERATED ALWAYS AS (
+    CASE WHEN ((first_name IS NULL OR first_name = '')
+  		    AND (last_name IS NULL OR last_name = ''))
+  	   THEN company_name
+  	     ELSE trim (both from trim(both from COALESCE(first_name, '') 
+  				       || ' '::text || 
+  				       COALESCE (last_name, '')))
+  	   END
+    )  STORED;
+#+end_src
+
+  #+BEGIN_SRC sql :results code :exports none
+  select pg_get_functiondef(oid) AS " "
+  from pg_proc
+  where proname = 'person_address';
+  #+END_SRC
+
+  #+RESULTS:
+  #+begin_src sql
+
+  CREATE OR REPLACE FUNCTION public.person_address(person_id integer, ws text DEFAULT ', '::text)
+   RETURNS text
+   LANGUAGE sql
+  AS $function$
+    SELECT person_address(person) FROM person WHERE person_id = $1;
+  $function$
+
+  CREATE OR REPLACE FUNCTION public.person_address(person, ws text DEFAULT ', '::text)
+   RETURNS text
+   LANGUAGE sql
+  AS $function$
+
+  SELECT concat_ws($2,
+   CASE WHEN (($1.address1 IS NOT NULL)
+	      AND $1.address1 != '')
+    THEN $1.address1 
+   END,
+   CASE WHEN (($1.address2 IS NOT NULL)
+	      AND $1.address2 != '')
+    THEN $1.address2
+   END, 
+   concat_ws(', ', $1.city, substring(person_province($1) for 2)), 
+   COALESCE($1.postal_zip_code, $1.postal_code)
+
+  );
+  $function$
+
+  #+end_src
+
+  #+begin_src sql
+    ALTER TABLE person ADD COLUMN address text
+         GENERATED ALWAYS AS (
+
+     CASE WHEN ((address1 IS NOT NULL)
+    	      AND address1 != '')
+      THEN address1
+      ELSE ''
+        
+     END ||
+     CASE WHEN ((address2 IS NOT NULL)
+    	      AND address2 != '')
+      THEN ', ' || address2
+      ELSE ''
+     END ||
+     CASE WHEN ((city IS NOT NULL)
+    	      AND city != '')
+      THEN ', ' || city
+      ELSE ''
+     END ||
+     CASE WHEN ((province IS NOT NULL)
+    	      AND province != '')
+      THEN ', ' || province
+      ELSE ''
+     END ||
+     CASE WHEN ((postal_code IS NOT NULL)
+    	      AND postal_code != '')
+      THEN ', ' || postal_code
+      ELSE ''
+     END ||
+     CASE WHEN ((postal_zip_code IS NOT NULL)
+    	      AND postal_zip_code != '')
+      THEN ', ' || postal_zip_code
+      ELSE ''
+     END ||
+    CASE WHEN ((country IS NOT NULL)
+    	      AND country != '')
+      THEN ', ' || country
+      ELSE ''
+     END
+    ) STORED;
+
+  #+end_src
+
+  #+RESULTS:
+  | ALTER TABLE |
+  |-------------|
+
+https://www.crunchydata.com/blog/fuzzy-name-matching-in-postgresql
+https://medium.com/@varun.santhikumar94/fuzzy-text-matching-with-postgresql-pg-trgm-fuzzystrmatch-extension-3cb25c2216b1
+
+https://www.postgresql.org/docs/current/fuzzystrmatch.html#FUZZYSTRMATCH-DAITCH-MOKOTOFF
+
+#+begin_src sql
+  -- CREATE EXTENSION fuzzystrmatch; 
+  CREATE OR REPLACE FUNCTION soundex_tsvector(v_name text) RETURNS tsvector
+    LANGUAGE SQL IMMUTABLE
+  BEGIN ATOMIC
+    SELECT to_tsvector('simple',
+                       string_agg(array_to_string(daitch_mokotoff(n), ' '), ' '))
+    FROM regexp_split_to_table(v_name, '\s+') AS n;
+  END;
+
+  CREATE OR REPLACE FUNCTION soundex_tsquery(v_name text) RETURNS tsquery
+  BEGIN ATOMIC
+    SELECT string_agg('(' || array_to_string(daitch_mokotoff(n), '|') || ')', '&')::tsquery
+    FROM regexp_split_to_table(v_name, '\s+') AS n;
+  END;
+#+end_src
+
+#+RESULTS:
+| CREATE FUNCTION |
+|-----------------|
+| CREATE FUNCTION |
+
+
+#+begin_src sql
+
+   ALTER TABLE person ADD COLUMN full_name_ts text
+   GENERATED ALWAYS AS (soundex_tsvector(
+    trim (both from trim(both from COALESCE(first_name, '') 
+    || ' '::text || 
+    COALESCE (last_name, '')) 
+    || ' ' ::text || 
+    COALESCE (company_name, ''))
+  ))  STORED;
+    
+#+end_src
+
+#+begin_src sql
+        CREATE OR REPLACE FUNCTION person_search(q text)
+        RETURNS SETOF person LANGUAGE SQL AS $$
+         SELECT person.* FROM person LEFT JOIN (SELECT $1 AS q) ON TRUE
+        WHERE person_name(person) ILIKE '%' || q ||'%' OR
+           full_name_ts @@ soundex_tsquery(q) -- OR
+        -- TRUE
+        ORDER BY full_name ~ q DESC, similarity(q, person_name(person)) DESC
+    ;
+       $$;
+        
+#+end_src
+
+#+RESULTS:
+| CREATE FUNCTION |
+|-----------------|
+
+  #+BEGIN_SRC sql :results code :exports none
+  select pg_get_functiondef(oid) AS " "
+  from pg_proc
+  where proname = 'search_person';
+  #+END_SRC
+
+  #+RESULTS:
+  #+begin_src sql
+
+  CREATE OR REPLACE FUNCTION public.search_person(text, _opt json DEFAULT '{"limit": 15}'::json)
+   RETURNS SETOF person
+   LANGUAGE sql
+  AS $function$
+    SELECT person.* FROM person
+    INNER JOIN
+       (
+	 SELECT person_id, full_name,
+		short_name = $1 AS sne,
+		short_name <-> $1 AS sdist,
+		full_name <-> $1 AS fdist,
+		length(short_name) > length($1) proper_size,
+		full_name LIKE $1 || '%' AS fnlike
+	   FROM person_name
+       ) pn USING (person_id)
+    ORDER BY sne DESC NULLS LAST, proper_size DESC NULLS LAST, fnlike DESC, sdist, fdist
+    LIMIT COALESCE(($2->>'limit')::int, 15)
+  $function$
+
+  #+end_src
+
+#+RESULTS:
+| CREATE FUNCTION |
+|-----------------|
+
+* Person View
+
+This is waaaaaaaay tooooooooo slow AND has been taken over by some generated columns.
+
+#+begin_src sql
+CREATE OR REPLACE VIEW person_view AS
+
+SELECT pv.* from (SELECT person_to_json(person) AS p FROM person) pe,
+  json_to_record(p) AS pv(person_id INT, name TEXT, short_name TEXT, first_name TEXT, last_name TEXT, company_name TEXT, email_address TEXT, province JSON)
+  ;
+
+-- SELECT * FROM person_view LIMIT 2;
+
+#+end_src
+
+#+RESULTS:
+| CREATE VIEW |                      |                      |            |               |              |               |                                                    |
+|-------------+----------------------+----------------------+------------+---------------+--------------+---------------+----------------------------------------------------|
+|   person_id | name                 | short_name           | first_name | last_name     | company_name | email_address | province                                           |
+|          19 | System Administrator | System Administrator | System     | Administrator |              |               | {"short_name":"BC","long_name":"British Columbia"} |
+|        9061 | Nicole Weeks         | Nicole Weeks         |            |               | Nicole Weeks |               |                                                    |
+
+* person_to_json
+
+  #+BEGIN_SRC sql :results code :exports none
+  select pg_get_functiondef(oid) AS " "
+  from pg_proc
+  where proname = 'corpus';
+  #+END_SRC
+
+
+  #+begin_src sql
+CREATE OR REPLACE FUNCTION person_to_json(person, _args json DEFAULT '{}'::json)
+   RETURNS json LANGUAGE sql STABLE AS $$
+      SELECT json_strip_nulls(
+        json_build_object(
+          'person_id', $1.person_id,
+          'name', person_name($1),
+          'short_name', person_short_name($1),
+          'first_name', CASE WHEN (trim(both from $1.first_name) != '') THEN $1.first_name END,
+          'last_name', CASE WHEN (trim(both FROM $1.last_name) != '') THEN $1.last_name END,
+          'company_name', CASE WHEN (trim(both FROM $1.company_name) != '') THEN $1.company_name END,
+          'email_address', CASE WHEN (trim(both FROM $1.email_address) != '')
+          THEN $1.email_address END,
+          'province', (SELECT
+                         json_build_object(
+                           'short_name', short_name,
+                           'long_name', long_name)
+                         FROM province_state WHERE $1.province_state_id = province_state_id)
+       ))
+$$;
+CREATE OR REPLACE FUNCTION person_to_json(person_id integer, _args json DEFAULT '{}'::json)
+   RETURNS json LANGUAGE sql STABLE AS $function$
+     SELECT person_to_json(person, $2) FROM person WHERE person_id = $1
+$function$;
+
+
+  #+end_src
+
+  #+RESULTS:
+  | CREATE FUNCTION |
+  |-----------------|
+  | CREATE FUNCTION |
+
+* Merge persons
+
+#+begin_src sql
+BEGIN;
+ALTER TABLE claim_transaction DISABLE TRIGGER ALL;
+ALTER TABLE app_user DISABLE TRIGGER ALL;
+ALTER TABLE policy DISABLE TRIGGER ALL;
+ALTER TABLE contract DISABLE TRIGGER ALL;
+ALTER TABLE claim DISABLE TRIGGER ALL;
+SELECT merge(m, VARIADIC d)
+ FROM (SELECT (select person FROM person WHERE person_id = master) AS m,
+       (SELECT array_agg(person) FROM person WHERE person_id = ANY(dups)) AS d
+ FROM (SELECT person_name(max_person_id),
+      max_person_id AS master,
+      total,
+      (SELECT array_agg(pid) FROM unnest(dups) pid WHERE pid != max_person_id) AS dups
+FROM (SELECT * FROM
+         (SELECT "text", count(*) AS total,
+              max((obj->>'person_id')::int) AS max_person_id,
+              array_agg(((obj->>'person_id')::int)) AS dups
+          FROM search_index GROUP BY "text"
+        ) t
+    WHERE total > 1 ORDER BY total desc
+) dups WHERE total > 1 ORDER BY total DESC LIMIT 1400) ma) mergme ;
+ALTER TABLE claim_transaction ENABLE TRIGGER ALL;
+ALTER TABLE policy ENABLE TRIGGER ALL;
+ALTER TABLE app_user ENABLE TRIGGER ALL;
+ALTER TABLE contract ENABLE TRIGGER ALL;
+ALTER TABLE claim ENABLE TRIGGER ALL;
+
+COMMIT;
+
+#+end_src
+
+#+RESULTS:
+| person                                |
+|---------------------------------------|
+| (35841,,,,"HLC ",,,,,,,,,,,,,,,,,,,,) |
+
+#+begin_src sql
+CREATE OR REPLACE FUNCTION merge_persons(master INT, VARIADIC dups INT[])
+ RETURNS BOOL LANGUAGE PLPGSQL AS $$
+ BEGIN
+   UPDATE claim SET coverage_counsel_id = $1 WHERE coverage_counsel_id = ANY($2);
+   UPDATE claim SET defense_counsel_id = $1 WHERE defense_counsel_id = ANY($2);
+   UPDATE claim SET external_adjuster_id = $1 WHERE external_adjuster_id = ANY($2);
+   UPDATE claim SET adjuster_id = $1 WHERE adjuster_id = ANY($2);
+   UPDATE claim SET plaintiff_id = $1 WHERE plaintiff_id = ANY($2);
+   UPDATE claim SET restoration_firm_emergency_id = $1 WHERE restoration_firm_emergency_id = ANY($2);
+   UPDATE claim SET restoration_firm_repair_id = $1 WHERE restoration_firm_repair_id = ANY($2);
+   UPDATE claim SET restoration_firm_id = $1 WHERE restoration_firm_id = ANY($2);
+   UPDATE claim SET adjuster_office_id  = $1 WHERE adjuster_office_id = ANY($2);
+
+
+   UPDATE app_user SET person_id = $1 WHERE person_id = ANY($2);
+
+   UPDATE policy SET agent_id = $1 WHERE agent_id = ANY($2);
+   UPDATE policy SET branch_id = $1 WHERE branch_id = ANY($2);
+   UPDATE policy SET agency_office_id = $1 WHERE agency_office_id = ANY($2);
+   UPDATE policy SET company_id = $1 WHERE company_id = ANY($2);
+   UPDATE policy SET insured_id = $1 WHERE insured_id = ANY($2);
+   UPDATE policy SET underwriter_id = $1 WHERE underwriter_id = ANY($2);
+
+
+   UPDATE contract SET agency_id = $1 WHERE agency_id = ANY($2);
+   UPDATE contract SET syndicate_id = $1 WHERE syndicate_id = ANY($2);
+   UPDATE contract SET insurance_company_id = $1 WHERE insurance_company_id = ANY($2);
+   UPDATE contract SET london_broker_id = $1 WHERE london_broker_id = ANY($2);
+   UPDATE claim_transaction SET payee_id = $1 WhERE payee_id = ANY($2);
+   UPDATE claim_transaction SET recipient_id = $1 WhERE recipient_id = ANY($2);
+   DELETE FROM person WHERE person_id = ANY($2);
+ RETURN TRUE;
+  END;
+$$;
+
+
+CREATE OR REPLACE FUNCTION merge(master person, VARIADIC dups person[])
+ RETURNS person LANGUAGE SQL AS $$
+ SELECT $1 FROM merge_persons($1.person_id, VARIADIC (SELECT array_agg(person_id) FROM unnest($2)));
+
+ $$;
+#+end_src
+
+#+RESULTS:
+| CREATE FUNCTION |
+|-----------------|
+| CREATE FUNCTION |
+
+* The JSON objects
+
+#+begin_src sql
+CREATE OR REPLACE FUNCTION person_object_link(person)
+RETURNS JSON LANGUAGE SQL AS $$
+SELECT CASE WHEN $1.person_id IS NOT NULL THEN json_build_object(
+  'person_id', $1.person_id,
+  'name', person_name($1),
+  'short_name', person_short_name($1))
+ END
+$$;
+
+CREATE OR REPLACE FUNCTION person_object_link(INT)
+RETURNS JSON LANGUAGE SQL AS $$
+ SELECT person_object_link(person) FROM person WHERE person_id = $1;
+$$;
+
+#+end_src
+

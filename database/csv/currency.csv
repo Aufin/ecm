@@ -1,0 +1,275 @@
+Territory,Code,From,To,Currency,Name
+Afghanistan,AF,2002-10-07 00:00,∞,AFN,Afghan Afghani
+Åland Islands,AX,1999-01-01 00:00,∞,EUR,Euro
+Albania,AL,1965-08-16 00:00,∞,ALL,Albanian Lek
+Algeria,DZ,1964-04-01 00:00,∞,DZD,Algerian Dinar
+American Samoa,AS,1904-07-16 00:00,∞,USD,US Dollar
+Andorra,AD,1999-01-01 00:00,∞,EUR,Euro
+Angola,AO,1999-12-13 00:00,∞,AOA,Angolan Kwanza
+Anguilla,AI,1965-10-06 00:00,∞,XCD,East Caribbean Dollar
+Antarctica,AQ,,∞,XXX,Unknown Currency
+Antigua & Barbuda,AG,1965-10-06 00:00,∞,XCD,East Caribbean Dollar
+Argentina,AR,1992-01-01 00:00,∞,ARS,Argentine Peso
+Armenia,AM,1993-11-22 00:00,∞,AMD,Armenian Dram
+Aruba,AW,1986-01-01 00:00,∞,AWG,Aruban Florin
+Ascension Island,AC,1976-01-01 00:00,∞,SHP,St. Helena Pound
+Australia,AU,1966-02-14 00:00,∞,AUD,Australian Dollar
+Austria,AT,1999-01-01 00:00,∞,EUR,Euro
+Azerbaijan,AZ,2006-01-01 00:00,∞,AZN,Azerbaijani Manat
+Bahamas,BS,1966-05-25 00:00,∞,BSD,Bahamian Dollar
+Bahrain,BH,1965-10-16 00:00,∞,BHD,Bahraini Dinar
+Bangladesh,BD,1972-01-01 00:00,∞,BDT,Bangladeshi Taka
+Barbados,BB,1973-12-03 00:00,∞,BBD,Barbadian Dollar
+Belarus,BY,2016-07-01 00:00,∞,BYN,Belarusian Ruble
+Belgium,BE,1999-01-01 00:00,∞,EUR,Euro
+Belize,BZ,1974-01-01 00:00,∞,BZD,Belize Dollar
+Benin,BJ,1975-11-30 00:00,∞,XOF,West African CFA Franc
+Bermuda,BM,1970-02-06 00:00,∞,BMD,Bermudan Dollar
+Bhutan,BT,1974-04-16 00:00,∞,BTN,Bhutanese Ngultrum
+,,1907-01-01 00:00,∞,INR,Indian Rupee
+Bolivia,BO,1987-01-01 00:00,∞,BOB,Bolivian Boliviano
+,,,∞,BOV,Bolivian Mvdol
+Bosnia & Herzegovina,BA,1995-01-01 00:00,∞,BAM,Bosnia-Herzegovina Convertible Mark
+Botswana,BW,1976-08-23 00:00,∞,BWP,Botswanan Pula
+Bouvet Island,BV,1905-06-07 00:00,∞,NOK,Norwegian Krone
+Brazil,BR,1994-07-01 00:00,∞,BRL,Brazilian Real
+British Indian Ocean Territory,IO,1965-11-08 00:00,∞,USD,US Dollar
+British Virgin Islands,VG,1833-01-01 00:00,∞,USD,US Dollar
+Brunei,BN,1967-06-12 00:00,∞,BND,Brunei Dollar
+Bulgaria,BG,1999-07-05 00:00,∞,BGN,Bulgarian Lev
+Burkina Faso,BF,1984-08-04 00:00,∞,XOF,West African CFA Franc
+Burundi,BI,1964-05-19 00:00,∞,BIF,Burundian Franc
+Cambodia,KH,1980-03-20 00:00,∞,KHR,Cambodian Riel
+Cameroon,CM,1973-04-01 00:00,∞,XAF,Central African CFA Franc
+Canada,CA,1858-01-01 00:00,∞,CAD,Canadian Dollar
+Canary Islands,IC,1999-01-01 00:00,∞,EUR,Euro
+Cape Verde,CV,1914-01-01 00:00,∞,CVE,Cape Verdean Escudo
+Caribbean Netherlands,BQ,2011-01-01 00:00,∞,USD,US Dollar
+Cayman Islands,KY,1971-01-01 00:00,∞,KYD,Cayman Islands Dollar
+Central African Republic,CF,1993-01-01 00:00,∞,XAF,Central African CFA Franc
+Ceuta & Melilla,EA,1999-01-01 00:00,∞,EUR,Euro
+Chad,TD,1993-01-01 00:00,∞,XAF,Central African CFA Franc
+Chile,CL,1975-09-29 00:00,∞,CLP,Chilean Peso
+,,,∞,CLF,Chilean Unit of Account (UF)
+China,CN,1953-03-01 00:00,∞,CNY,Chinese Yuan
+,,2010-07-19 00:00,∞,CNH,Chinese Yuan (offshore)
+Christmas Island,CX,1966-02-14 00:00,∞,AUD,Australian Dollar
+Clipperton Island,CP,,∞,XXX,Unknown Currency
+Cocos (Keeling) Islands,CC,1966-02-14 00:00,∞,AUD,Australian Dollar
+Colombia,CO,1905-01-01 00:00,∞,COP,Colombian Peso
+,,,∞,COU,Colombian Real Value Unit
+Comoros,KM,1975-07-06 00:00,∞,KMF,Comorian Franc
+Congo - Brazzaville,CG,1993-01-01 00:00,∞,XAF,Central African CFA Franc
+Congo - Kinshasa,CD,1998-07-01 00:00,∞,CDF,Congolese Franc
+Cook Islands,CK,1967-07-10 00:00,∞,NZD,New Zealand Dollar
+Costa Rica,CR,1896-10-26 00:00,∞,CRC,Costa Rican Colón
+Côte d’Ivoire,CI,1958-12-04 00:00,∞,XOF,West African CFA Franc
+Croatia,HR,2023-01-01 00:00,∞,EUR,Euro
+Cuba,CU,1859-01-01 00:00,∞,CUP,Cuban Peso
+,,1994-01-01 00:00,∞,CUC,Cuban Convertible Peso
+Curaçao,CW,2010-10-10 00:00,∞,ANG,Netherlands Antillean Guilder
+Cyprus,CY,2008-01-01 00:00,∞,EUR,Euro
+Czechia,CZ,1993-01-01 00:00,∞,CZK,Czech Koruna
+Denmark,DK,1873-05-27 00:00,∞,DKK,Danish Krone
+Diego Garcia,DG,1965-11-08 00:00,∞,USD,US Dollar
+Djibouti,DJ,1977-06-27 00:00,∞,DJF,Djiboutian Franc
+Dominica,DM,1965-10-06 00:00,∞,XCD,East Caribbean Dollar
+Dominican Republic,DO,1947-10-01 00:00,∞,DOP,Dominican Peso
+Ecuador,EC,2000-10-02 00:00,∞,USD,US Dollar
+Egypt,EG,1885-11-14 00:00,∞,EGP,Egyptian Pound
+El Salvador,SV,2001-01-01 00:00,∞,USD,US Dollar
+Equatorial Guinea,GQ,1993-01-01 00:00,∞,XAF,Central African CFA Franc
+Eritrea,ER,1997-11-08 00:00,∞,ERN,Eritrean Nakfa
+Estonia,EE,2011-01-01 00:00,∞,EUR,Euro
+Eswatini,SZ,1974-09-06 00:00,∞,SZL,Swazi Lilangeni
+Ethiopia,ET,1976-09-15 00:00,∞,ETB,Ethiopian Birr
+Falkland Islands,FK,1901-01-01 00:00,∞,FKP,Falkland Islands Pound
+Faroe Islands,FO,1948-01-01 00:00,∞,DKK,Danish Krone
+Fiji,FJ,1969-01-13 00:00,∞,FJD,Fijian Dollar
+Finland,FI,1999-01-01 00:00,∞,EUR,Euro
+France,FR,1999-01-01 00:00,∞,EUR,Euro
+French Guiana,GF,1999-01-01 00:00,∞,EUR,Euro
+French Polynesia,PF,1945-12-26 00:00,∞,XPF,CFP Franc
+French Southern Territories,TF,1999-01-01 00:00,∞,EUR,Euro
+Gabon,GA,1993-01-01 00:00,∞,XAF,Central African CFA Franc
+Gambia,GM,1971-07-01 00:00,∞,GMD,Gambian Dalasi
+Georgia,GE,1995-09-23 00:00,∞,GEL,Georgian Lari
+Germany,DE,1999-01-01 00:00,∞,EUR,Euro
+Ghana,GH,2007-07-03 00:00,∞,GHS,Ghanaian Cedi
+Gibraltar,GI,1713-01-01 00:00,∞,GIP,Gibraltar Pound
+Greece,GR,2001-01-01 00:00,∞,EUR,Euro
+Greenland,GL,1873-05-27 00:00,∞,DKK,Danish Krone
+Grenada,GD,1967-02-27 00:00,∞,XCD,East Caribbean Dollar
+Guadeloupe,GP,1999-01-01 00:00,∞,EUR,Euro
+Guam,GU,1944-08-21 00:00,∞,USD,US Dollar
+Guatemala,GT,1925-05-27 00:00,∞,GTQ,Guatemalan Quetzal
+Guernsey,GG,1830-01-01 00:00,∞,GBP,British Pound
+Guinea,GN,1986-01-06 00:00,∞,GNF,Guinean Franc
+Guinea-Bissau,GW,1997-03-31 00:00,∞,XOF,West African CFA Franc
+Guyana,GY,1966-05-26 00:00,∞,GYD,Guyanaese Dollar
+Haiti,HT,1872-08-26 00:00,∞,HTG,Haitian Gourde
+,,1915-01-01 00:00,∞,USD,US Dollar
+Heard & McDonald Islands,HM,1967-02-16 00:00,∞,AUD,Australian Dollar
+Honduras,HN,1926-04-03 00:00,∞,HNL,Honduran Lempira
+Hong Kong SAR China,HK,1895-02-02 00:00,∞,HKD,Hong Kong Dollar
+Hungary,HU,1946-07-23 00:00,∞,HUF,Hungarian Forint
+Iceland,IS,1981-01-01 00:00,∞,ISK,Icelandic Króna
+India,IN,1835-08-17 00:00,∞,INR,Indian Rupee
+Indonesia,ID,1965-12-13 00:00,∞,IDR,Indonesian Rupiah
+Iran,IR,1932-05-13 00:00,∞,IRR,Iranian Rial
+Iraq,IQ,1931-04-19 00:00,∞,IQD,Iraqi Dinar
+Ireland,IE,1999-01-01 00:00,∞,EUR,Euro
+Isle of Man,IM,1840-01-03 00:00,∞,GBP,British Pound
+Israel,IL,1985-09-04 00:00,∞,ILS,Israeli New Shekel
+Italy,IT,1999-01-01 00:00,∞,EUR,Euro
+Jamaica,JM,1969-09-08 00:00,∞,JMD,Jamaican Dollar
+Japan,JP,1871-06-01 00:00,∞,JPY,Japanese Yen
+Jersey,JE,1837-01-01 00:00,∞,GBP,British Pound
+Jordan,JO,1950-07-01 00:00,∞,JOD,Jordanian Dinar
+Kazakhstan,KZ,1993-11-05 00:00,∞,KZT,Kazakhstani Tenge
+Kenya,KE,1966-09-14 00:00,∞,KES,Kenyan Shilling
+Kiribati,KI,1966-02-14 00:00,∞,AUD,Australian Dollar
+Kosovo,XK,2002-01-01 00:00,∞,EUR,Euro
+Kuwait,KW,1961-04-01 00:00,∞,KWD,Kuwaiti Dinar
+Kyrgyzstan,KG,1993-05-10 00:00,∞,KGS,Kyrgystani Som
+Laos,LA,1979-12-10 00:00,∞,LAK,Laotian Kip
+Latvia,LV,2014-01-01 00:00,∞,EUR,Euro
+Lebanon,LB,1948-02-02 00:00,∞,LBP,Lebanese Pound
+Lesotho,LS,1961-02-14 00:00,∞,ZAR,South African Rand
+,,1980-01-22 00:00,∞,LSL,Lesotho Loti
+Liberia,LR,1944-01-01 00:00,∞,LRD,Liberian Dollar
+Libya,LY,1971-09-01 00:00,∞,LYD,Libyan Dinar
+Liechtenstein,LI,1921-02-01 00:00,∞,CHF,Swiss Franc
+Lithuania,LT,2015-01-01 00:00,∞,EUR,Euro
+Luxembourg,LU,1999-01-01 00:00,∞,EUR,Euro
+Macao SAR China,MO,1901-01-01 00:00,∞,MOP,Macanese Pataca
+Madagascar,MG,1983-11-01 00:00,∞,MGA,Malagasy Ariary
+Malawi,MW,1971-02-15 00:00,∞,MWK,Malawian Kwacha
+Malaysia,MY,1963-09-16 00:00,∞,MYR,Malaysian Ringgit
+Maldives,MV,1981-07-01 00:00,∞,MVR,Maldivian Rufiyaa
+Mali,ML,1984-06-01 00:00,∞,XOF,West African CFA Franc
+Malta,MT,2008-01-01 00:00,∞,EUR,Euro
+Marshall Islands,MH,1944-01-01 00:00,∞,USD,US Dollar
+Martinique,MQ,1999-01-01 00:00,∞,EUR,Euro
+Mauritania,MR,2018-01-01 00:00,∞,MRU,Mauritanian Ouguiya
+Mauritius,MU,1934-04-01 00:00,∞,MUR,Mauritian Rupee
+Mayotte,YT,1999-01-01 00:00,∞,EUR,Euro
+Mexico,MX,1993-01-01 00:00,∞,MXN,Mexican Peso
+,,,∞,MXV,Mexican Investment Unit
+Micronesia,FM,1944-01-01 00:00,∞,USD,US Dollar
+Moldova,MD,1993-11-29 00:00,∞,MDL,Moldovan Leu
+Monaco,MC,1999-01-01 00:00,∞,EUR,Euro
+Mongolia,MN,1915-03-01 00:00,∞,MNT,Mongolian Tugrik
+Montenegro,ME,2002-01-01 00:00,∞,EUR,Euro
+Montserrat,MS,1967-02-27 00:00,∞,XCD,East Caribbean Dollar
+Morocco,MA,1959-10-17 00:00,∞,MAD,Moroccan Dirham
+Mozambique,MZ,2006-07-01 00:00,∞,MZN,Mozambican Metical
+Myanmar (Burma),MM,1989-06-18 00:00,∞,MMK,Myanmar Kyat
+Namibia,NA,1993-01-01 00:00,∞,NAD,Namibian Dollar
+,,1961-02-14 00:00,∞,ZAR,South African Rand
+Nauru,NR,1966-02-14 00:00,∞,AUD,Australian Dollar
+Nepal,NP,1933-01-01 00:00,∞,NPR,Nepalese Rupee
+Netherlands,NL,1999-01-01 00:00,∞,EUR,Euro
+New Caledonia,NC,1985-01-01 00:00,∞,XPF,CFP Franc
+New Zealand,NZ,1967-07-10 00:00,∞,NZD,New Zealand Dollar
+Nicaragua,NI,1991-04-30 00:00,∞,NIO,Nicaraguan Córdoba
+Niger,NE,1958-12-19 00:00,∞,XOF,West African CFA Franc
+Nigeria,NG,1973-01-01 00:00,∞,NGN,Nigerian Naira
+Niue,NU,1967-07-10 00:00,∞,NZD,New Zealand Dollar
+Norfolk Island,NF,1966-02-14 00:00,∞,AUD,Australian Dollar
+North Korea,KP,1959-04-17 00:00,∞,KPW,North Korean Won
+North Macedonia,MK,1993-05-20 00:00,∞,MKD,Macedonian Denar
+Northern Mariana Islands,MP,1944-01-01 00:00,∞,USD,US Dollar
+Norway,NO,1905-06-07 00:00,∞,NOK,Norwegian Krone
+Oman,OM,1972-11-11 00:00,∞,OMR,Omani Rial
+Pakistan,PK,1948-04-01 00:00,∞,PKR,Pakistani Rupee
+Palau,PW,1944-01-01 00:00,∞,USD,US Dollar
+Palestinian Territories,PS,1985-09-04 00:00,∞,ILS,Israeli New Shekel
+,,1996-02-12 00:00,∞,JOD,Jordanian Dinar
+Panama,PA,1903-11-04 00:00,∞,PAB,Panamanian Balboa
+,,1903-11-18 00:00,∞,USD,US Dollar
+Papua New Guinea,PG,1975-09-16 00:00,∞,PGK,Papua New Guinean Kina
+Paraguay,PY,1943-11-01 00:00,∞,PYG,Paraguayan Guarani
+Peru,PE,1991-07-01 00:00,∞,PEN,Peruvian Sol
+Philippines,PH,1946-07-04 00:00,∞,PHP,Philippine Peso
+Pitcairn Islands,PN,1969-01-13 00:00,∞,NZD,New Zealand Dollar
+Poland,PL,1995-01-01 00:00,∞,PLN,Polish Zloty
+Portugal,PT,1999-01-01 00:00,∞,EUR,Euro
+Puerto Rico,PR,1898-12-10 00:00,∞,USD,US Dollar
+Qatar,QA,1973-05-19 00:00,∞,QAR,Qatari Riyal
+Réunion,RE,1999-01-01 00:00,∞,EUR,Euro
+Romania,RO,2005-07-01 00:00,∞,RON,Romanian Leu
+Russia,RU,1999-01-01 00:00,∞,RUB,Russian Ruble
+Rwanda,RW,1964-05-19 00:00,∞,RWF,Rwandan Franc
+Samoa,WS,1967-07-10 00:00,∞,WST,Samoan Tala
+San Marino,SM,1999-01-01 00:00,∞,EUR,Euro
+São Tomé & Príncipe,ST,2018-01-01 00:00,∞,STN,São Tomé & Príncipe Dobra
+Saudi Arabia,SA,1952-10-22 00:00,∞,SAR,Saudi Riyal
+Senegal,SN,1959-04-04 00:00,∞,XOF,West African CFA Franc
+Serbia,RS,2006-10-25 00:00,∞,RSD,Serbian Dinar
+Seychelles,SC,1903-11-01 00:00,∞,SCR,Seychellois Rupee
+Sierra Leone,SL,2022-07-01 00:00,∞,SLE,Sierra Leonean Leone
+Singapore,SG,1967-06-12 00:00,∞,SGD,Singapore Dollar
+Sint Maarten,SX,2010-10-10 00:00,∞,ANG,Netherlands Antillean Guilder
+Slovakia,SK,2009-01-01 00:00,∞,EUR,Euro
+Slovenia,SI,2007-01-01 00:00,∞,EUR,Euro
+Solomon Islands,SB,1977-10-24 00:00,∞,SBD,Solomon Islands Dollar
+Somalia,SO,1960-07-01 00:00,∞,SOS,Somali Shilling
+South Africa,ZA,1961-02-14 00:00,∞,ZAR,South African Rand
+South Georgia & South Sandwich Islands,GS,1908-01-01 00:00,∞,GBP,British Pound
+South Korea,KR,1962-06-10 00:00,∞,KRW,South Korean Won
+South Sudan,SS,2011-07-18 00:00,∞,SSP,South Sudanese Pound
+Spain,ES,1999-01-01 00:00,∞,EUR,Euro
+Sri Lanka,LK,1978-05-22 00:00,∞,LKR,Sri Lankan Rupee
+St. Barthélemy,BL,1999-01-01 00:00,∞,EUR,Euro
+St. Helena,SH,1917-02-15 00:00,∞,SHP,St. Helena Pound
+St. Kitts & Nevis,KN,1965-10-06 00:00,∞,XCD,East Caribbean Dollar
+St. Lucia,LC,1965-10-06 00:00,∞,XCD,East Caribbean Dollar
+St. Martin,MF,1999-01-01 00:00,∞,EUR,Euro
+St. Pierre & Miquelon,PM,1999-01-01 00:00,∞,EUR,Euro
+St. Vincent & Grenadines,VC,1965-10-06 00:00,∞,XCD,East Caribbean Dollar
+Sudan,SD,2007-01-10 00:00,∞,SDG,Sudanese Pound
+Suriname,SR,2004-01-01 00:00,∞,SRD,Surinamese Dollar
+Svalbard & Jan Mayen,SJ,1905-06-07 00:00,∞,NOK,Norwegian Krone
+Sweden,SE,1873-05-27 00:00,∞,SEK,Swedish Krona
+Switzerland,CH,1799-03-17 00:00,∞,CHF,Swiss Franc
+,,,∞,CHE,WIR Euro
+,,,∞,CHW,WIR Franc
+Syria,SY,1948-01-01 00:00,∞,SYP,Syrian Pound
+Taiwan,TW,1949-06-15 00:00,∞,TWD,New Taiwan Dollar
+Tajikistan,TJ,2000-10-26 00:00,∞,TJS,Tajikistani Somoni
+Tanzania,TZ,1966-06-14 00:00,∞,TZS,Tanzanian Shilling
+Thailand,TH,1928-04-15 00:00,∞,THB,Thai Baht
+Timor-Leste,TL,1999-10-20 00:00,∞,USD,US Dollar
+Togo,TG,1958-11-28 00:00,∞,XOF,West African CFA Franc
+Tokelau,TK,1967-07-10 00:00,∞,NZD,New Zealand Dollar
+Tonga,TO,1966-02-14 00:00,∞,TOP,Tongan Paʻanga
+Trinidad & Tobago,TT,1964-01-01 00:00,∞,TTD,Trinidad & Tobago Dollar
+Tristan da Cunha,TA,1938-01-12 00:00,∞,GBP,British Pound
+Tunisia,TN,1958-11-01 00:00,∞,TND,Tunisian Dinar
+Turkey,TR,2005-01-01 00:00,∞,TRY,Turkish Lira
+Turkmenistan,TM,2009-01-01 00:00,∞,TMT,Turkmenistani Manat
+Turks & Caicos Islands,TC,1969-09-08 00:00,∞,USD,US Dollar
+Tuvalu,TV,1966-02-14 00:00,∞,AUD,Australian Dollar
+U.S. Outlying Islands,UM,1944-01-01 00:00,∞,USD,US Dollar
+U.S. Virgin Islands,VI,1837-01-01 00:00,∞,USD,US Dollar
+Uganda,UG,1987-05-15 00:00,∞,UGX,Ugandan Shilling
+Ukraine,UA,1996-09-02 00:00,∞,UAH,Ukrainian Hryvnia
+United Arab Emirates,AE,1973-05-19 00:00,∞,AED,United Arab Emirates Dirham
+United Kingdom,GB,1694-07-27 00:00,∞,GBP,British Pound
+United States,US,1792-01-01 00:00,∞,USD,US Dollar
+,,,∞,USN,US Dollar (Next day)
+Uruguay,UY,1993-03-01 00:00,∞,UYU,Uruguayan Peso
+,,,∞,UYI,Uruguayan Peso (Indexed Units)
+,,,∞,UYW,Uruguayan Nominal Wage Index Unit
+Uzbekistan,UZ,1994-07-01 00:00,∞,UZS,Uzbekistani Som
+Vanuatu,VU,1981-01-01 00:00,∞,VUV,Vanuatu Vatu
+Vatican City,VA,1999-01-01 00:00,∞,EUR,Euro
+Venezuela,VE,2018-08-20 00:00,∞,VES,Venezuelan Bolívar
+,,,∞,VED,Bolívar Soberano
+Vietnam,VN,1985-09-14 00:00,∞,VND,Vietnamese Dong
+Wallis & Futuna,WF,1961-07-30 00:00,∞,XPF,CFP Franc
+Western Sahara,EH,1976-02-26 00:00,∞,MAD,Moroccan Dirham
+Yemen,YE,1990-05-22 00:00,∞,YER,Yemeni Rial
+Zambia,ZM,2013-01-01 00:00,∞,ZMW,Zambian Kwacha
+Zimbabwe,ZW,2009-04-12 00:00,∞,USD,US Dollar

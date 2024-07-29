@@ -1,0 +1,3 @@
+#+TITLE: Notes and Logs and "wiki" like pages
+
+~C-c n e TAB~ 

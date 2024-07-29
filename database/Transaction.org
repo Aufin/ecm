@@ -1,0 +1,1923 @@
+#+TITLE: Claim Transaction
+#+SETUPFILE: ./setupfile.org
+
+#+PROPERTY: header-args:sql :engine postgres :cmdline "\"sslmode=disable host=db.ecm.lan user=maxclaims port=5432 dbname=maxclaims\""
+Transactions. Most claims have them.
+* Reports
+
+** Indemnity billed
+
+
+
+#+begin_src sql
+  SELECT tsrange AS date_range, sum(amount)::money AS total FROM claim_transaction ct,
+  --The two-argument form constructs a range in standard form (lower bound inclusive, upper bound exclusive)
+  (SELECT tsrange(tstart, tend) FROM
+  (SELECT ts AS tstart, ts + interval '1 YEAR' AS tend
+   FROM unnest(array['2021-01-01', '2022-01-01']::timestamp[]) ts) ts) ts
+
+  WHERE claim_transaction_is_indemnity(ct)
+  AND tsrange @> transaction_date
+  AND int4range(3,4) @> transaction_type_id
+  GROUP BY tsrange;
+#+end_src
+
+#+RESULTS:
+|                                   | total          |
+|-----------------------------------------------+----------------|
+| ["2021-01-01 00:00:00","2022-01-01 00:00:00") | $55,699,614.23 |
+| ["2022-01-01 00:00:00","2023-01-01 00:00:00") | $70,321,472.69 |
+
+* Database
+** The ~claim_transaction~ table.
+
+
+ | Column                 | Type                        | Description               |   |   |
+ |------------------------+-----------------------------+---------------------------+---+---|
+ | transaction_id         | integer                     | Primary Key               |   |   |
+ | transaction_type_id    | integer                     | not null                  |   |   |
+ | transaction_date       | timestamp without time zone | not null                  |   |   |
+ | claim_id               | integer                     | not null                  |   |   |
+ | payee_id               | integer                     |                           |   |   |
+ | cheque_number          | text                        | not null default ''::text |   |   |
+ | amount                 | numeric(20,2)               |                           |   |   |
+ | schemes_advance_number | text                        |                           |   |   |
+ | reference_number       | text                        |                           |   |   |
+ | expense_type           | text                        |                           |   |   |
+ | transaction_heading    | text                        |                           |   |   |
+ | approved               | boolean                     | default false             |   |   |
+ | type                   | text                        |                           |   |   |
+ | recipient_id           | integer                     |                           |   |   |
+
+
+ #+begin_src sql
+   ALTER TABLE claim_transaction ADD COLUMN recipient_id INTEGER REFERENCES person(person_id);
+   --ALTER TABLE claim_transaction ADD COLUMN date_of_issuance timestamp with time zone;
+   --ALTER TABLE claim_transaction ADD COLUMN date_of_issuance timestamp with time zone;
+
+ #+end_src
+
+*** Unique Constraint
+
+
+    Transactions, like many things, cannot be duplicates. Yet, some silly
+    programmer might allow such things in the UI by "accident', so we deal with
+    it in the DB. The database is never wrong.
+
+
+ #+begin_src sql
+   ALTER TABLE claim_transaction ADD CONSTRAINT no_duplicates_allowed
+     UNIQUE (transaction_type_id, transaction_date, claim_id,
+             transaction_heading, amount);
+
+ #+end_src
+
+**** find duplicates
+
+ There is a view, duplicate_transaction, that contains duplicates per day. We
+ disallow down to the second, so these are "legal". Yet, not quite desired?
+
+
+
+ #+begin_src sql :tangle "/tmp/duplicate-open-cheques.sql"
+ SELECT * from duplicate_transaction AS dt
+  WHERE "Status" = 'Open'
+  AND type_id > 2
+ #+end_src
+
+ #+begin_src sql :tangle "/tmp/duplicate-closed-cheques.sql"
+ SELECT * from duplicate_transaction AS dt
+  WHERE "Status" = 'Closed'
+  AND type_id > 2
+  ORDER BY "Claim#" DESC;
+ #+end_src
+
+
+ #+begin_src sql :tangle "/tmp/duplicate-open-reserves.sql"
+ SELECT * from duplicate_transaction AS dt
+  WHERE "Status" = 'Open'
+  AND type_id <= 2
+ #+end_src
+
+ #+begin_src sql
+ DROP VIEW duplicate_transaction;
+ #+end_src
+ #+RESULTS:
+ | DROP VIEW |
+ |-----------|
+
+
+
+ #+begin_src sql
+   CREATE OR REPLACE VIEW duplicate_transaction AS (
+     WITH duplicate_tranny AS (
+       SELECT dups.*, status
+         FROM
+             (SELECT claim_id
+                     , (select description from claim_transaction_type AS ct
+                         WHERE claim_transaction_type_id = transaction_type_id )
+                       AS type
+                     , transaction_heading
+                     , amount
+                     , transaction_date::date AS date
+                     , count(*) AS total
+                   , transaction_type_id AS type_id
+                     , array_agg(transaction_id)
+                     , array_agg(person_name(payee_id)) AS payees
+                     , array_agg(cheque_number) AS cheque_numbers
+                     , array_agg(reference_number) AS reference_numbers
+                FROM claim_transaction AS tranny
+               GROUP BY claim_id, amount, transaction_heading , transaction_date::date
+                        , transaction_type_id)
+             AS dups
+             LEFT JOIN claim USING (claim_id)
+        WHERE total > 1
+     )
+
+     SELECT
+       claim_id AS "Claim#"
+       , status AS "Status"
+       , type AS "Type"
+       , transaction_heading AS "Heading"
+       , date AS "Date"
+       , amount AS "Amount"
+       , total AS "Num"
+       , json_build_object(
+         'Payees', payees
+         ,'Cheque Numbers', cheque_numbers
+         ,'Reference Numbers', reference_numbers
+       ) AS "Cheques"
+       , type_id
+
+
+
+     FROM duplicate_tranny AS dt
+      ORDER BY claim_id, date
+   );
+
+ #+end_src
+
+ #+RESULTS:
+ | CREATE VIEW |
+ |-------------|
+
+**** fix duplicates
+
+ #+begin_src sql
+     BEGIN;
+         ALTER TABLE claim_transaction DISABLE TRIGGER USER;
+
+     WITH dups AS (
+       SELECT dups.*, status
+       FROM
+           (SELECT claim_id, amount, (select description from claim_transaction_type AS ct
+                                       WHERE claim_transaction_type_id = transaction_type_id )
+                   , transaction_heading
+                   , transaction_type_id
+                   , transaction_date
+                   , array_agg(cheque_number) AS cheques
+                   , array_agg(transaction_id) AS transaction_ids
+                   , count(*) AS total
+              FROM claim_transaction
+             GROUP BY claim_id, amount, transaction_heading , transaction_date
+                      , transaction_type_id)
+           AS dups
+           LEFT JOIN claim USING (claim_id)
+        WHERE total > 1
+     ), allt AS (
+       SELECT ROW_NUMBER () OVER (ORDER BY tid)::text::interval second AS row_num, tid, claim_id
+         FROM (
+           SELECT UNNEST(transaction_ids) AS tid, claim_id from dups
+         ) AS cls
+     ), doit AS (
+       UPDATE claim_transaction SET transaction_date = transaction_date + row_num
+                                    FROM allt
+        WHERE transaction_id = tid
+              RETURNING transaction_id
+     )
+         SELECT count(*) from doit ;
+
+     ALTER TABLE claim_transaction ENABLE TRIGGER USER;
+
+     COMMIT;
+
+   WITH duplicate_transactions AS (
+     SELECT dups.*, status
+       FROM
+           (SELECT claim_id, amount, (select description from claim_transaction_type AS ct
+                                       WHERE claim_transaction_type_id = transaction_type_id )
+                   , transaction_heading
+                   , transaction_type_id AS type
+                   , transaction_date::date AS date
+                   , array_agg(cheque_number) AS cheques
+                   , array_agg(transaction_id) AS transaction_ids
+                   , count(*) AS total
+              FROM claim_transaction
+             GROUP BY claim_id, amount, transaction_heading , transaction_date::date
+                      , transaction_type_id)
+
+           AS dups
+           LEFT JOIN claim USING (claim_id)
+      WHERE total > 1
+   )
+
+   SELECT * FROM duplicate_transactions
+    WHERE status = 'Open' AND type > 2 ORDER BY date;
+
+ #+end_src
+*** \d claim transaction
+
+  #+BEGIN_SRC sql :results verbatim :wrap src sql
+  \d claim_transaction;
+  #+END_SRC
+
+  #+RESULTS:
+  #+begin_src sql
+  Table "public.claim_transaction"
+  Column	Type	Collation	Nullable	Default
+  transaction_id	integer		not null	nextval('claimtransaction_claimtransaction_id_seq'::text::regclass)
+  transaction_type_id	integer		not null	
+  transaction_date	timestamp without time zone		not null	
+  claim_id	integer		not null	
+  payee_id	integer			
+  cheque_number	text			''::text
+  amount	numeric(20,2)			
+  schemes_advance_number	text			
+  reference_number	text			
+  expense_type	text			
+  transaction_heading	text			
+  approved	boolean			false
+  type	text			
+  limit_of_cover	numeric(20,2)			
+  recipient_id	integer			
+  Indexes:
+      "claimtransaction_pkey" PRIMARY KEY, btree (transaction_id)
+      "a_id_type_date_heading" btree (claim_id, transaction_type_id, transaction_date, transaction_heading)
+      "a_sum_of_id_type_date" btree (claim_id, transaction_type_id, transaction_date)
+      "claim_id_date" btree (claim_id, transaction_date)
+      "claim_number" btree (claim_id)
+      "idex_1" btree (transaction_type_id, claim_id)
+      "no_duplicates_allowed" UNIQUE CONSTRAINT, btree (transaction_type_id, transaction_date, claim_id, transaction_heading, amount)
+      "open_reserve" UNIQUE, btree (claim_id, transaction_heading) WHERE transaction_type_id = 1
+      "transaction_type_key" btree (transaction_type_id)
+  Check constraints:
+      "limit_of_cover_only_for_open_reserve" CHECK (transaction_type_id <> 1 AND limit_of_cover IS NULL OR transaction_type_id = 1)
+  Foreign-key constraints:
+      "$1" FOREIGN KEY (claim_id) REFERENCES claim(claim_id)
+      "$2" FOREIGN KEY (payee_id) REFERENCES person(person_id)
+      "claim_transaction_recipient_id_fkey" FOREIGN KEY (recipient_id) REFERENCES person(person_id)
+      "claimtransaction_expense_type_fkey" FOREIGN KEY (expense_type) REFERENCES claim_transaction_expense_type(claim_transaction_expense_type_name)
+      "claimtransaction_transaction_heading_fkey" FOREIGN KEY (transaction_heading) REFERENCES claim_transaction_heading(claim_transaction_heading_name) ON UPDATE CASCADE ON DELETE RESTRICT
+      "claimtransaction_transaction_type_id_fkey" FOREIGN KEY (transaction_type_id) REFERENCES claim_transaction_type(claim_transaction_type_id)
+  Referenced by:
+      TABLE "_aurorapayment_transaction" CONSTRAINT "_aurorapayment_transaction_transaction_id_fkey" FOREIGN KEY (transaction_id) REFERENCES claim_transaction(transaction_id)
+  Triggers:
+      a_ensure_max BEFORE INSERT OR UPDATE ON claim_transaction FOR EACH ROW EXECUTE FUNCTION ensure_claim_transaction_limit_of_cover()
+      check_positive_outstanding_reserve_trigger AFTER INSERT OR DELETE OR UPDATE ON claim_transaction FOR EACH ROW EXECUTE FUNCTION check_positive_outstanding_reserve_transaction()
+      claim_indemnity_upsert AFTER INSERT OR DELETE OR UPDATE ON claim_transaction FOR EACH ROW EXECUTE FUNCTION claim_indemnity_upsert()
+      ensure_amount AFTER INSERT OR UPDATE ON claim_transaction NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION ensure_amount_for_payment()
+      ensure_payee AFTER INSERT OR UPDATE ON claim_transaction NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION ensure_payee_for_payment()
+      hstore_row_history AFTER INSERT OR DELETE OR UPDATE ON claim_transaction FOR EACH ROW EXECUTE FUNCTION hstore_row_history()
+      positive_outstanding_deductible_transaction BEFORE INSERT OR UPDATE ON claim_transaction FOR EACH ROW EXECUTE FUNCTION positive_outstanding_deductible_transaction()
+      postitive_recovered_deductible BEFORE INSERT OR UPDATE ON claim_transaction FOR EACH ROW EXECUTE FUNCTION positive_recovered_deductible()
+      record_claim_movement AFTER INSERT OR DELETE OR UPDATE ON claim_transaction FOR EACH ROW EXECUTE FUNCTION record_claim_movement('transaction_id')
+      z_update_type BEFORE INSERT OR UPDATE ON claim_transaction FOR EACH ROW EXECUTE FUNCTION update_claim_transaction_type()
+      zclaim_over_authority AFTER INSERT OR UPDATE ON claim_transaction FOR EACH ROW WHEN (claim_over_authority(new.claim_id)) EXECUTE FUNCTION trigger_claim_transaction_over_authority()
+  #+end_src
+
+
+
+** Transaction Types
+
+ Back in the day we kept keys as ints, to keep things small. Now [[#col_claim_tran_type][There's a
+ trigger]], but we still set the int.
+
+ #+BEGIN_SRC sql :exports results
+ SELECT * from claim_transaction_type ORDER BY claim_transaction_type_id;
+ #+END_SRC
+
+ #+RESULTS:
+ | claim_transaction_type_id | description              |
+ |---------------------------+--------------------------|
+ |                         1 | Open Reserve             |
+ |                         2 | Reserve Adjustment       |
+ |                         3 | Cheque - Loss            |
+ |                         4 | Cheque - Expense         |
+ |                         5 | Cheque - In House Payout |
+ |                         6 | Subrogation              |
+ |                         7 | Salvage Recovery         |
+ |                         8 | Recovered Deductible     |
+ |                         9 | Cash Call/Scheme Advance |
+
+#+begin_src sql :noweb-ref limit-of-cover-migration
+INSERT INTO claim_transaction_type VALUES (0, 'Limit of Cover');
+#+end_src
+
+#+RESULTS:
+| INSERT 0 1 |
+|------------|
+
+*** /column/ claim_transaction.type
+    :PROPERTIES:
+    :CUSTOM_ID: col_claim_tran_type
+    :END:
+
+  However, now moore's law has made it not matter so much. So we'll add a column.
+
+  #+begin_src sql
+  ALTER TABLE claim_transaction ADD COLUMN type TEXT ;
+  #+end_src
+
+  #+begin_src sql
+  ALTER TABLE claim_transaction DISABLE TRIGGER ALL;
+  UPDATE claim_transaction SET type = (select description from claim_transaction_type WHERE claim_transaction_type_id = transaction_type_id);
+  ALTER TABLE claim_transaction ENABLE TRIGGER ALL;
+  #+end_src
+
+
+  #+begin_src sql
+
+    CREATE OR REPLACE FUNCTION public.update_claim_transaction_type()
+     RETURNS trigger
+     LANGUAGE plpgsql
+    AS $function$
+    DECLARE
+    BEGIN
+     SELECT description INTO NEW.type
+       FROM  claim_transaction_type
+      WHERE claim_transaction_type_id = NEW.transaction_type_id ;
+
+      RETURN NEW;
+    END;
+    $function$;
+
+    DROP TRIGGER
+      IF EXISTS z_update_type ON claim_transaction;
+        CREATE TRIGGER z_update_type
+          BEFORE insert OR update ON claim_transaction
+          FOR EACH row EXECUTE procedure
+            public.update_claim_transaction_type();
+  #+end_src
+
+
+
+
+  #+RESULTS:
+  | CREATE FUNCTION |
+  |-----------------|
+  | DROP TRIGGER    |
+  | CREATE TRIGGER  |
+
+
+** Transaction Headings
+
+ #+BEGIN_SRC sql :exports results
+ SELECT * from claim_transaction_heading;
+ #+END_SRC
+
+ #+RESULTS:
+ | claim_transaction_heading_name       | indemnity |
+ |--------------------------------------+-----------|
+ | Adjusting                            | f         |
+ | Legal                                | f         |
+ | TPA                                  | f         |
+ | Expert Expense                       | f         |
+ | Minor Injury Guideline               | f         |
+ | Insurer Examination                  | f         |
+ | Attendant Care                       | f         |
+ | Non Earner Benefit                   | f         |
+ | Investigator Fees                    | f         |
+ | Disbursement                         | f         |
+ | Contents                             | t         |
+ | Building                             | t         |
+ | Indemnity                            | t         |
+ | Crime                                | t         |
+ | Additional Living Expense            | t         |
+ | Equipment                            | t         |
+ | Stock                                | t         |
+ | Additional Coverages                 | t         |
+ | Medical/Rehabilitation               | t         |
+ | Income Replacement                   | t         |
+ | Loss of Rent                         | t         |
+ | Tow                                  | t         |
+ | Storage                              | t         |
+ | Business Interruption                | t         |
+ | Property Damage                      | t         |
+ | Bodily Injury                        | t         |
+ | Tenants legal liability              | t         |
+ | Detached Building                    | t         |
+ | Professional Fees                    | t         |
+ | Plate Glass                          | t         |
+ | Collision                            | t         |
+ | Theft                                | t         |
+ | Vandalism                            | t         |
+ | Direct Compensation                  | t         |
+ | Glass - Windshield                   | t         |
+ | Electronic Data Processing Equipment | t         |
+ | Car Rental                           | t         |
+ | Extra Expense                        | t         |
+ | Improvements and Betterments         | t         |
+ | Comprehensive                        | t         |
+ | Faulty Workmanship                   | t         |
+ | Cargo                                | t         |
+ | Debris Removal                       | t         |
+ | Tool Floater                         | t         |
+ | Rental                               | t         |
+ | Loss Assessment                      | t         |
+ | Lock & Key                           | t         |
+ | Livestock                            | t         |
+ | Builders Risk                        | t         |
+
+#+begin_src sql
+INSERT INTO claim_transaction_heading
+ VALUES ('Loss Assessment'), ('Lock & Key');
+#+end_src
+
+#+RESULTS:
+| INSERT 0 2 |
+|------------|
+
+
+ #+BEGIN_SRC sql :exports results
+ \d claim_transaction_heading;
+ #+END_SRC
+
+ #+RESULTS:
+ | Table "public.claim_transaction_heading"                                                                                                                                                                                     |      |           |          |         |
+ |------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+------+-----------+----------+---------|
+ | Column                                                                                                                                                                                                                       | Type | Collation | Nullable | Default |
+ | claim_transaction_heading_name                                                                                                                                                                                               | text |           | not null |         |
+ | Indexes:                                                                                                                                                                                                                     |      |           |          |         |
+ | "claim_transaction_heading_pkey" PRIMARY KEY, btree (claim_transaction_heading_name)                                                                                                                                         |      |           |          |         |
+ | Referenced by:                                                                                                                                                                                                               |      |           |          |         |
+ | TABLE "claim_transaction" CONSTRAINT "claimtransaction_transaction_heading_fkey" FOREIGN KEY (transaction_heading) REFERENCES claim_transaction_heading(claim_transaction_heading_name) ON UPDATE CASCADE ON DELETE RESTRICT |      |           |          |         |
+
+** Expense Types
+
+#+begin_src sql
+SELECT * FROM claim_transaction_expense_type;
+#+end_src
+
+#+RESULTS:
+| claim_transaction_expense_type_name |
+|-------------------------------------|
+| Legal Fees                          |
+| Expert Fees                         |
+| Adjusting / Investigation           |
+| No expense code selected            |
+| Payment                             |
+
+** ~claim_limit_of_cover~
+
+   We only want one per heading. It will eventually be a transaction type!. For
+   now, an index and constraint.
+
+
+#+begin_src sql
+ALTER TABLE claim_transaction DROP CONSTRAINT check_open_limit_of_cover_only;
+ALTER TABLE claim_transaction ADD CONSTRAINT limit_of_cover_only_for_open_reserve
+CHECK ((transaction_type_id != 1 AND limit_of_cover IS NULL) OR transaction_type_id = 1);
+#+end_src
+
+#+RESULTS:
+| ALTER TABLE |
+|-------------|
+| ALTER TABLE |
+
+#+begin_src sql
+UPDATE claim_transaction SET limit_of_cover = NULL WHERE limit_of_cover IS NOT NULL AND transaction_type_id != 1;
+
+SELECT * FROM claim_transaction WHERE  LIMIT 5;
+#+end_src
+
+#+RESULTS:
+| UPDATE 60      |                     |                  |          |          |               |        |                        |                  |              |                     |          |      |                |
+|----------------+---------------------+------------------+----------+----------+---------------+--------+------------------------+------------------+--------------+---------------------+----------+------+----------------|
+| transaction_id | transaction_type_id | transaction_date | claim_id | payee_id | cheque_number | amount | schemes_advance_number | reference_number | expense_type | transaction_heading | approved | type | limit_of_cover |
+
+*** TODO Future transaction type
+   Most policies define an upper limit on [[#Indemnity][Indemnity]] transactions. Transactions of
+   type ~0~ are thus.
+
+   There can be only one limit per heading,
+
+ #+begin_src sql :noweb-ref limit-of-cover-migration
+   CREATE UNIQUE INDEX IF NOT EXISTS idx_claim_transaction_unique_limit_of_cover ON claim_transaction (claim_id, transaction_heading)
+   WHERE (transaction_type_id = 0);
+ #+end_src
+
+ #+RESULTS:
+ | CREATE INDEX |
+ |--------------|
+
+****  /View/ ~claim_limit_of_cover~
+
+  #+begin_src sql :noweb-ref limit-of-cover-migration
+  CREATE OR REPLACE VIEW claim_limit_of_cover AS
+    SELECT *
+      FROM (SELECT claim_id, transaction_heading AS heading
+                   , transaction_date AS date, amount
+              FROM claim_transaction WHERE transaction_type_id = 0
+             UNION SELECT claim_id, NULL::text, NULL::date, SUM(amount)
+              FROM claim_transaction
+             WHERE transaction_type_id = 0 GROUP BY claim_id
+      ) AS l
+     ORDER BY claim_id, date NULLS LAST;
+  #+end_src
+
+  #+RESULTS:
+  | CREATE VIEW |
+  |-------------|
+
+ #+begin_src sql
+ SELECT * from claim_limit_of_cover LIMIT 3;
+ #+end_src
+
+ #+RESULTS:
+ | claim_id | heading | date | amount |
+ |----------+---------+------+--------|
+
+**** /Function/ ~claim_limit_of_cover(claim)~
+
+ #+begin_src sql :noweb-ref limit-of-cover-migration
+   CREATE OR REPLACE FUNCTION claim_limit_of_cover(_claim_id INTEGER)
+     RETURNS numeric(20,2) LANGUAGE SQL AS $$
+   SELECT amount FROM claim_limit_of_cover WHERE claim_id = $1 AND heading IS NULL;
+   $$;
+   CREATE OR REPLACE FUNCTION claim_limit_of_cover(claim)
+     RETURNS numeric(20,2) LANGUAGE SQL AS $$
+     SELECT claim_limit_of_cover($1.claim_id) ;
+   $$;
+   CREATE OR REPLACE FUNCTION claim_limit_of_cover(_claim_id INTEGER, _heading TEXT)
+     RETURNS numeric(20,2) LANGUAGE SQL AS $$
+   SELECT amount FROM claim_limit_of_cover WHERE claim_id = $1 AND heading = $2;
+   $$;
+   CREATE OR REPLACE FUNCTION claim_limit_of_cover(claim, TEXT)
+     RETURNS numeric(20,2) LANGUAGE SQL AS $$
+     SELECT claim_limit_of_cover($1.claim_id, $2) ;
+   $$;
+ #+end_src
+
+ #+RESULTS:
+ | CREATE FUNCTION |
+ |-----------------|
+ | CREATE FUNCTION |
+ | CREATE FUNCTION |
+ | CREATE FUNCTION |
+
+ #+begin_src sql
+ SELECT claim_limit_of_cover(1234, 'Building');
+ #+end_src
+
+ #+RESULTS:
+ | claim_limit_of_cover |
+ |----------------------|
+ |                77.77 |
+
+
+**** /Trigger/ ~a_under_limit~ ON claim_transaction
+
+
+  #+begin_src sql :noweb-ref limit-of-cover-migration
+
+    CREATE OR REPLACE FUNCTION public.ensure_claim_transaction_limit_of_cover()
+     RETURNS trigger
+     LANGUAGE plpgsql
+    AS $function$
+      DECLARE
+      _limit claim_limit_of_cover;
+      _total numeric;
+      _claim_id INTEGER := NEW.claim_id;
+      _heading TEXT := NEW.transaction_heading;
+    BEGIN
+      -- First off, this only matters for Idemnity Transactions.
+      IF (claim_transaction_is_indemnity(NEW))
+        THEN
+        SELECT * INTO _limit FROM claim_limit_of_cover
+         WHERE claim_id = _claim_id AND heading = _heading;
+          -- If this is an open reserve for indemnity, there must be a limit already set.
+          IF (NEW.transaction_type_id = 1
+              AND (_limit.amount IS NULL
+                   OR _limit.amount < NEW.amount))
+          THEN
+            RAISE EXCEPTION 'NO LIMIT OF COVER : The Reserves in % for Claim #% must have a maximum amount (right now %) that is greater than or equal to the amount of the open reserve (%)'
+              , NEW.transaction_heading, NEW.claim_id, _limit, NEW.amount ;
+
+            ELSEIF (NEW.transaction_type_id = 3
+                    OR NEW.transaction_type_id = 4
+                    OR NEW.transaction_type_id = 5)
+              THEN -- Ok, this must still be under the limit_of_cover
+                   -- Select the open reserve
+                -- The Open Reserve max, if the limit_of_cover is not null, must be more than
+                -- what is paid right now.
+                SELECT claim_paid(_heading, _claim_id) INTO _total;
+                IF (_limit.amount IS NOT NULL
+                    AND (_limit.amount < _total + NEW.amount)) THEN
+          RAISE EXCEPTION 'OVER LIMIT_OF_COVER: The amount % drives the total paid for #% % (%) over the limit_of_cover %', NEW.amount, NEW.claim_id, NEW.transaction_heading, _total, _limit.amount;
+          END IF;
+          END IF;
+          END IF;
+    RETURN NEW;
+
+
+    END;
+    $function$;
+
+    DROP TRIGGER
+      IF EXISTS a_under_limit ON claim_transaction;
+        CREATE TRIGGER a_under_limit
+          BEFORE insert OR update ON claim_transaction
+          FOR EACH row EXECUTE procedure
+            public.ensure_claim_transaction_limit_of_cover();
+  #+end_src
+
+  #+RESULTS:
+  | CREATE FUNCTION |
+  |-----------------|
+  | DROP TRIGGER    |
+  | CREATE TRIGGER  |
+
+
+**** Backport Hack
+
+ #+begin_src sql :noweb-ref limit-of-cover-migration-start
+ DROP TRIGGER
+      IF EXISTS a_ensure_max ON claim_transaction;
+
+ INSERT INTO claim_transaction(transaction_type_id, transaction_date, claim_id, amount, transaction_heading)
+         SELECT 0, transaction_date - INTERVAL '2 sec'
+                  , claim_id, limit_of_cover, transaction_heading
+         FROM claim_transaction WHERE limit_of_cover IS NOT NULL
+ ON CONFLICT DO NOTHING;
+
+ ALTER TABLE claim_transaction DROP COLUMN limit_of_cover;
+ #+end_src
+
+
+ #+RESULTS:
+
+  #+BEGIN_SRC sql :results code :exports none
+  select pg_get_functiondef(oid) AS " " from pg_proc where proname = 'ensure_claim_transaction_limit_of_cover';
+  #+END_SRC
+ #+begin_src sql
+
+   CREATE OR REPLACE FUNCTION public.ensure_claim_transaction_limit_of_cover()
+    RETURNS trigger
+    LANGUAGE plpgsql
+   AS $function$
+        DECLARE
+        _open claim_transaction;
+        _total numeric;
+
+      BEGIN
+
+        -- If this is an open reserve for indemnity, there must be a maximum value.
+        IF (claim_transaction_is_indemnity(NEW) AND NEW.transaction_type_id = 1 AND (NEW.limit_of_cover IS NULL OR NEW.limit_of_cover < NEW.amount)) THEN
+            RAISE EXCEPTION 'NO LIMIT OF COVER : The Reserves in % for Claim #% must have a maximum amount (right now %) that is greater than or equal to the amount of the open reserve (%)'
+               , NEW.transaction_heading, NEW.claim_id, NEW.limit_of_cover, NEW.amount ;
+          ELSEIF (NEW.transaction_type_id = 3
+                  OR NEW.transaction_type_id = 4
+                  OR NEW.transaction_type_id = 5) THEN -- Ok, this must still be under the limit_of_cover
+            -- Select the open reserve
+            SELECT t.* INTO _open
+            FROM claim_transaction AS t
+            WHERE t.claim_id = NEW.claim_id
+            AND t.transaction_heading = NEW.transaction_heading
+            AND t.transaction_type_id = 1 LIMIT 1;
+
+            -- The Open Reserve max, if the limit_of_cover is not null, must be more than
+            -- what is paid right now.
+            SELECT claim_paid(NEW.transaction_heading, NEW.claim_id) INTO _total;
+            IF (claim_transaction_is_indemnity(NEW)
+                 AND _open.limit_of_cover IS NOT NULL
+                -- AND (_open.limit_of_cover < (_total - CASE WHEN (TG_OP = 'UPDATE') THEN OLD.amount ELSE 0 END) + NEW.amount)
+                )
+               THEN
+            RAISE EXCEPTION 'OVER LIMIT_OF_COVER: The amount % drives the total paid for #% % (%) over the limit_of_cover %', NEW.amount, NEW.claim_id, NEW.transaction_heading, _total, _open.limit_of_cover ;
+            END IF;
+
+      END IF;
+
+      RETURN NEW;
+
+
+      END;
+      $function$
+
+ #+end_src
+
+ #+RESULTS:
+ | CREATE FUNCTION |
+ |-----------------|
+
+
+
+** ~claim_reserve~ view
+
+#+begin_src sql
+DROP VIEW claim_reserve ;
+CREATE OR REPLACE VIEW claim_reserve AS
+  SELECT claim_id, type, transaction_heading AS  heading
+        , transaction_date AS date , amount FROM claim_transaction
+  WHERE transaction_type_id IN (1,2) ;
+#+end_src
+
+#+RESULTS:
+| DROP VIEW   |
+|-------------|
+| CREATE VIEW |
+
+#+begin_src sql
+SELECT * FROM claim_reserve WHERE claim_id = 1234 ORDER BY claim_id DESC LIMIT 5;
+#+end_src
+
+#+RESULTS:
+| claim_id | type         | heading        | date                |   amount |
+|----------+--------------+----------------+---------------------+----------|
+|     1234 | Open Reserve | Loss of Rent   | 2019-12-01 18:54:21 |    66.66 |
+|     1234 | Open Reserve | Attendant Care | 2019-12-20 12:01:21 |    40.00 |
+|     1234 | Open Reserve | Building       | 2018-12-12 14:46:16 | 20000.00 |
+|     1234 | Open Reserve | Contents       | 2010-03-14 14:04:06 |  1000.00 |
+|     1234 | Open Reserve | Stock          | 2022-01-21 10:08:19 |     1.00 |
+
+
+** Claim Transaction Constraints
+
+ There's a whole bunch of things required for a transaction to be valid.
+
+
+  | Triggers:                                                                                                                                                                             |
+  | check_positive_outstanding_reserve_trigger AFTER INSERT OR DELETE OR UPDATE ON claim_transaction FOR EACH ROW EXECUTE PROCEDURE check_positive_outstanding_reserve_transaction()      |
+  | hstore_row_history AFTER INSERT OR DELETE OR UPDATE ON claim_transaction FOR EACH ROW EXECUTE PROCEDURE hstore_row_history()                                                          |
+  | positive_outstanding_deductible_transaction BEFORE INSERT OR UPDATE ON claim_transaction FOR EACH ROW EXECUTE PROCEDURE positive_outstanding_deductible_transaction()                 |
+  | postitive_recovered_deductible BEFORE INSERT OR UPDATE ON claim_transaction FOR EACH ROW EXECUTE PROCEDURE positive_recovered_deductible()                                            |
+  | zclaim_over_authority AFTER INSERT OR UPDATE ON claim_transaction FOR EACH ROW WHEN (claim_over_authority(new.claim_id)) EXECUTE PROCEDURE trigger_claim_transaction_over_authority() |
+  |                                                                                                                                                                                       |
+
+
+ #+BEGIN_SRC sql :results code :exports none
+ select pg_get_functiondef(oid) AS " "
+ from pg_proc
+ where proname = 'check_positive_outstanding_reserve_transaction';
+ #+END_SRC
+
+*** Unique Heading and Open Reserve
+
+#+begin_src sql
+CREATE UNIQUE INDEX open_reserve ON claim_transaction (claim_id, transaction_heading)
+    WHERE transaction_type_id = 1
+#+end_src
+
+#+RESULTS:
+| CREATE INDEX |
+|--------------|
+
+**** Backport:: Get rid of duplicates
+
+     #+begin_src sql
+       -- ALTER TABLE claim_transaction ADD CONSTRAINT unq_open_reserve
+       --  UNIQUE ()
+
+       SELECT * FROM
+                    (SELECT claim_id, transaction_heading, type, count(*) AS total
+                            , array_agg(limit_of_cover) AS limits
+                              , array_agg(amount) AS amounts
+                       FROM claim_transaction
+                      WHERE type = 'Open Reserve'
+                      GROUP BY claim_id, transaction_heading, type ORDER BY claim_id DESC) AS ores
+                    LEFT JOIN claim USING (claim_id)
+        WHERE total > 1
+
+        LIMIT 15;
+
+     #+end_src
+
+     #+RESULTS:
+     | claim_id | transaction_heading | type | total | limits | amounts | adjuster_id | date_of_loss | status | cause | modified | rev_date | open_date | close_date | plaintiff_id | notes | risk_id | adjuster_office_id | deductible | defense_counsel_id | coverage_counsel_id | total_deductible | authority | external_adjuster_id | recovery_subrogation_date | claim_received_time | claim_acknowledged_time | peer_reviewed_date | line_of_business | coverage | event_category | basis_of_settlement | subscription_percent | denial | refer_to_underwriters | over_authority | open_for_recovery | claim_first_notification_acknowledgement_date | insured_contacted_time | first_site_visit_time | restoration_firm_id | restoration_firm_emergency_id | restoration_firm_repair_id | lineage |
+     |----------+---------------------+------+-------+--------+---------+-------------+--------------+--------+-------+----------+----------+-----------+------------+--------------+-------+---------+--------------------+------------+--------------------+---------------------+------------------+-----------+----------------------+---------------------------+---------------------+-------------------------+--------------------+------------------+----------+----------------+---------------------+----------------------+--------+-----------------------+----------------+-------------------+-----------------------------------------------+------------------------+-----------------------+---------------------+-------------------------------+----------------------------+---------|
+
+
+**** Issue No value but limit_of_cover
+
+#+begin_src sql
+  SELECT * FROM
+   (SELECT claim_id, limit_of_cover
+         , (SELECT transaction_id FROM claim_transaction AS ores
+             WHERE ores.claim_id = ct.claim_id
+               AND ores.transaction_heading = ct.transaction_heading
+               AND ores.type = ct.type
+               AND ores.transaction_id != ct.transaction_id LIMIT 1) AS open_res
+    from claim_transaction AS ct
+   WHERE amount IS NULL AND limit_of_cover IS NOT NULL) AS nv
+   WHERE open_res IS NOT NULL;
+#+end_src
+
+#+RESULTS:
+| claim_id | limit_of_cover | open_res |
+|----------+----------------+----------|
+
+#+begin_src sql
+  CREATE OR REPLACE FUNCTION _find_limit(claim_transaction)
+    RETURNS claim_transaction LANGUAGE SQL VOLATILE AS $$
+
+    SELECT ct.* FROM claim_transaction AS ct
+    WHERE ct.claim_id = $1.claim_id
+    AND ct.transaction_id != $1.transaction_id
+    AND ct.transaction_heading = $1.transaction_heading
+    AND ct.type = 'Open Reserve'
+    AND ct.limit_of_cover IS NOT NULL
+  $$;
+#+end_src
+
+First, these are ones where there's another open with a limit, and this one is null.
+
+#+begin_src sql
+  CREATE TABLE _open_limit_null AS
+  SELECT * from claim_transaction AS ct
+    WHERE ct.type = 'Open Reserve' AND limit_of_cover IS NULL
+          AND (_find_limit(ct.*)).type IS NOT NULL
+    ORDER BY claim_id DESC ;
+#+end_src
+
+Now for all the limits with a duplicate open reserve that's a null limitas previously
+recorded.
+
+#+begin_src sql
+  CREATE TABLE _limits_for_open_limit_null AS
+  SELECT (_find_limit((ct.*))).*
+    FROM claim_transaction AS ct
+   WHERE transaction_id
+         IN (SELECT transaction_id FROM _open_limit_null)
+         ;
+#+end_src
+
+Now, update the transactions to add the limits, and delete the limits.
+
+
+#+begin_src sql
+UPDATE claim_transaction AS ct
+  SET limit_of_cover = (_find_limit((ct.*))).limit_of_cover,
+      amount = amount + COALESCE((_find_limit((ct.*))).amount, 0)
+  WHERE transaction_id IN (SELECT transaction_id FROM _open_limit_null);
+#+end_src
+
+And now we can delete duplicates.
+
+#+begin_src sql
+  DELETE FROM claim_transaction
+   WHERE transaction_id
+         IN (SELECT transaction_id FROM _limits_for_open_limit_null) ;
+#+end_src
+#+RESULTS:
+| DELETE 473 |
+|------------|
+
+***** Who did it?
+
+#+begin_src sql
+SELECT user_role, count(*) AS number, person_name(person_id)
+   FROM history.hstore_history JOIN app_user ON (substring(user_role from 4) = app_user_id::text)
+   WHERE row_id IN (SELECT transaction_id from _open_limit_null) AND row_type = 'claim_transaction'
+  GROUP BY user_role, person_id ORDER BY number DESC
+-- ORDER BY modification_time DESC LIMIT 5;
+#+end_src
+
+#+RESULTS:
+| user_role | number | person_name                                 |   |
+|-----------+--------+---------------------------------------------+---|
+| mu_421    |    256 | Bobbi Brooklyn Maxwell Claims Services      |   |
+| mu_417    |     88 | Ronni Bateman Maxwell Claims Services       |   |
+| mu_425    |     77 | Heather deVink Maxwell Claims Services      |   |
+| mu_424    |     24 | Mounira Klein Maxwell Claims Services       |   |
+| mu_445    |     18 | Kristy Valido Maxwell Claims Services       |   |
+| mu_4      |     10 | Sandy Morrison Maxwell Claims Services Inc. |   |
+| mu_478    |      8 | Shauna Matt Maxwell Claims Services         |   |
+| mu_539    |      3 | Hannah Dylewski                             |   |
+| mu_350    |      2 | Troy Ferrajohn Maxwell Claims Services      |   |
+| mu_459    |      1 | Smita Patel Maxwell Claims Services         |   |
+| mu_392    |      1 | Beth Trisko Maxwell Claims Services         |   |
+
+
+**** ISSUE Turn into adjustment
+
+#+begin_src sql
+  CREATE OR REPLACE FUNCTION _find_adjust(claim_transaction)
+    RETURNS claim_transaction LANGUAGE SQL VOLATILE AS $$
+
+    SELECT ct.* FROM claim_transaction AS ct
+    WHERE ct.claim_id = $1.claim_id
+    AND ct.transaction_id > $1.transaction_id
+    AND (ct.transaction_heading = $1.transaction_heading
+         OR (ct.transaction_heading IS NULL AND $1.transaction_heading IS NULL))
+    AND ct.type = 'Open Reserve'
+  $$;
+#+end_src
+
+#+RESULTS:
+| CREATE FUNCTION |
+|-----------------|
+
+     #+begin_src sql
+   DROP TABLE _should_be_adjust;
+   CREATE TABLE _should_be_adjust AS
+     SELECT (f.adj).* FROM (SELECT _find_adjust(ct.*) AS adj, *
+          FROM claim_transaction AS ct
+        WHERE type = 'Open Reserve') AS f
+    WHERE (f.adj).type IS NOT NULL;
+     #+end_src
+
+     #+RESULTS:
+     | DROP TABLE |
+     |------------|
+     | SELECT 1   |
+
+If they are 0, they can be deleted
+
+#+begin_src sql
+DELETE FROM claim_transaction WHERE amount = 0
+  AND transaction_id IN (SELECT transaction_id FROM _should_be_adjust);
+#+end_src
+
+#+RESULTS:
+| DELETE 1 |
+|----------|
+
+#+begin_src sql
+UPDATE claim_transaction SET transaction_type_id = 2
+ WHERE transaction_id IN (SELECT transaction_id FROM _should_be_adjust)
+  AND claim_id NOT IN (30203, 30352,26720, 38101, 35440);
+#+end_src
+
+#+RESULTS:
+| UPDATE 1 |
+|----------|
+
+#+begin_src sql
+UPDATE claim_transaction SET transaction_type_id = 2, amount = amount + 1
+ WHERE transaction_id IN (SELECT transaction_id FROM _should_be_adjust)
+  AND claim_id IN (30203, 30352,26720, 38101, 35440);
+#+end_src
+     #+RESULTS:
+     | UPDATE 7 |
+     |----------|
+
+
+
+
+
+** Reserves
+   :PROPERTIES:
+   :CUSTOM_ID: Reserves
+   :END:
+
+  When a reserve is opened, a maximum value for that reserve must also be set.
+
+ #+begin_src sql
+ ALTER TABLE claim_transaction ADD COLUMN limit_of_cover numeric(20,2);
+ #+end_src
+
+ #+begin_src sql
+
+   CREATE OR REPLACE FUNCTION public.ensure_claim_transaction_limit_of_cover()
+    RETURNS trigger
+    LANGUAGE plpgsql
+   AS $function$
+     DECLARE
+     _open claim_transaction;
+     _total numeric;
+
+   BEGIN
+
+     -- If this is an open reserve for indemnity, there must be a maximum value.
+     IF (claim_transaction_is_indemnity(NEW) AND NEW.transaction_type_id = 1 AND (NEW.limit_of_cover IS NULL OR NEW.limit_of_cover < NEW.amount)) THEN
+         RAISE EXCEPTION 'NO LIMIT OF COVER : The Reserves in % for Claim #% must have a maximum amount (right now %) that is greater than or equal to the amount of the open reserve (%)', NEW.transaction_heading, NEW.claim_id, NEW.limit_of_cover, NEW.amount ;
+       ELSEIF (NEW.transaction_type_id = 3
+               OR NEW.transaction_type_id = 4
+               OR NEW.transaction_type_id = 5) THEN -- Ok, this must still be under the limit_of_cover
+         -- Select the open reserve
+         SELECT t.* INTO _open
+         FROM claim_transaction AS t
+         WHERE t.claim_id = NEW.claim_id
+         AND t.transaction_heading = NEW.transaction_heading
+         AND t.transaction_type_id = 1 LIMIT 1;
+
+         -- The Open Reserve max, if the limit_of_cover is not null, must be more than
+         -- what is paid right now.
+         SELECT claim_paid(NEW.transaction_heading, NEW.claim_id) INTO _total;
+         IF (claim_transaction_is_indemnity(NEW) AND _open.limit_of_cover IS NOT NULL AND (_open.limit_of_cover < _total + NEW.amount)) THEN
+         RAISE EXCEPTION 'OVER LIMIT_OF_COVER: The amount % drives the total paid for #% % (%) over the limit_of_cover %', NEW.amount, NEW.claim_id, NEW.transaction_heading, _total, _open.limit_of_cover ;
+         END IF;
+
+   END IF;
+
+   RETURN NEW;
+
+
+   END;
+   $function$;
+
+   DROP TRIGGER
+     IF EXISTS a_ensure_max ON claim_transaction;
+       CREATE TRIGGER a_ensure_max
+         BEFORE insert OR update ON claim_transaction
+         FOR EACH row EXECUTE procedure
+           public.ensure_claim_transaction_limit_of_cover();
+ #+end_src
+
+ #+RESULTS:
+ | CREATE FUNCTION |
+ |-----------------|
+ | DROP TRIGGER    |
+ | CREATE TRIGGER  |
+
+
+*** 'claim_reserve';
+
+ #+BEGIN_SRC sql :results code :exports none
+ select pg_get_functiondef(oid) AS " "
+ from pg_proc
+ where proname = 'claim_reserve';
+ #+END_SRC
+
+ #+RESULTS:
+ #+BEGIN_SRC sql
+
+ CREATE OR REPLACE FUNCTION public.claim_reserve(claim_id integer, end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone)
+  RETURNS numeric
+  LANGUAGE sql
+  STABLE
+ AS $function$
+  -- note this has no start_date because there is no sensible per-period calculation for the reserve
+  SELECT (claim_open_reserve ($1, $2) + claim_reserve_adjustment ($1, $2));
+ $function$
+
+ CREATE OR REPLACE FUNCTION public.claim_reserve(heading text, claim_id integer, end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone)
+  RETURNS numeric
+  LANGUAGE sql
+  STABLE
+ AS $function$
+  -- note this has no start_date because there is no sensible per-period calculation for the reserve
+  SELECT (claim_open_reserve ($1, $2, $3) + claim_reserve_adjustment ($1, $2, $3));
+ $function$
+
+ #+END_SRC
+
+*** 'claim_outstanding_reserve';
+
+
+ #+BEGIN_SRC sql
+ SELECT jsi.claim_balance(claim) FROM claim WHERE claim_id = 48877;
+ SELECT claim_outstanding_reserve(48877);
+ SELECT claim_status(48877, 'infinity'::timestamp);
+ SELECT claim_reserve(48877, 'infinity'::timestamp);
+ SELECT claim_outstanding_reserve(48877);
+
+ SELECT max(claim_id) FROM claim;
+
+ #+END_SRC
+
+
+
+ #+BEGIN_SRC sql :results code :exports none
+ select pg_get_functiondef(oid) AS " "
+ from pg_proc
+ where proname = 'claim_outstanding_reserve';
+ #+END_SRC
+
+ #+RESULTS:
+ #+begin_src sql
+
+ CREATE OR REPLACE FUNCTION public.claim_outstanding_reserve(claim_id integer, end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone)
+  RETURNS numeric
+  LANGUAGE sql
+ AS $function$
+    -- note this has no start_date because there is no sensible per-period calculation for the reserve
+    SELECT
+    CASE WHEN (claim_status($1, $2) = 'Closed')
+          THEN 0
+          ELSE
+          -- fixme: this calc and the one in claim_transaction_bordereau differ
+          claim_reserve ($1, $2)
+          -- fixme: should this calculation be claim_??_expense?
+          - ((claim_cheque_loss ($1, $2) + claim_cheque_expense ($1, $2)
+              + claim_cheque_in_house ($1, $2) + claim_cash_call($1, $2))
+               - (claim_salvage ($1, $2) + claim_subrogation ($1, $2)))
+         END AS outstanding_reserve;
+ $function$
+
+ CREATE OR REPLACE FUNCTION public.claim_outstanding_reserve(headings text[], claim_id integer, end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone)
+  RETURNS numeric
+  LANGUAGE sql
+ AS $function$
+
+    SELECT SUM(claim_outstanding_reserve(heading, $2, $3))
+      FROM UNNEST($1) AS heading;
+   $function$
+
+ CREATE OR REPLACE FUNCTION public.claim_outstanding_reserve(heading text, claim_id integer, end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone)
+  RETURNS numeric
+  LANGUAGE sql
+  STABLE
+ AS $function$
+    -- note this has no start_date because there is no sensible per-period calculation for the reserve
+    SELECT
+    CASE WHEN (claim_status($2, $3) = 'Closed')
+          THEN 0
+          ELSE
+          -- fixme: this calc and the one in claim_transaction_bordereau differ
+          claim_reserve ($1, $2, $3)
+          -- fixme: should this calculation be claim_??_expense?
+          - ((claim_cheque_loss ($1, $2, $3) + claim_cheque_expense ($1, $2, $3)
+             + claim_cheque_in_house ($1, $2, $3) + claim_cash_call($1, $2, $3))
+               - (claim_salvage ($1, $2, $3) + claim_subrogation ($1, $2, $3)))
+         END AS outstanding_reserve;
+ $function$
+
+ #+end_src
+
+
+ #+BEGIN_SRC sql
+
+ CREATE OR REPLACE FUNCTION public.claim_outstanding_reserve(claim_id integer, end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone)
+  RETURNS numeric
+  LANGUAGE sql
+  STABLE
+ AS $function$
+    -- note this has no start_date because there is no sensible per-period calculation for the reserve
+    SELECT
+    CASE WHEN claim_status ($1) = 'Closed'
+   	      AND (select max(transaction_date) from claim_transaction where claim_id = $1) <= $2
+          THEN 0
+          ELSE
+          -- fixme: this calc and the one in claim_transaction_bordereau differ
+          claim_reserve ($1, $2)
+          -- fixme: should this calculation be claim_??_expense?
+          - ((claim_cheque_loss ($1, $2) + claim_cheque_expense ($1, $2)
+              + claim_cheque_in_house ($1, $2) + claim_cash_call($1, $2))
+               - (claim_salvage ($1, $2) + claim_subrogation ($1, $2)))
+         END AS outstanding_reserve;
+ $function$
+
+ CREATE OR REPLACE FUNCTION public.claim_outstanding_reserve(heading text, claim_id integer, end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone)
+  RETURNS numeric
+  LANGUAGE sql
+  STABLE
+ AS $function$
+    -- note this has no start_date because there is no sensible per-period calculation for the reserve
+    SELECT
+    CASE WHEN claim_status ($2) = 'Closed'
+   	      AND (select max(transaction_date) from claim_transaction where claim_id = $2) <= $3
+          THEN 0
+          ELSE
+          -- fixme: this calc and the one in claim_transaction_bordereau differ
+          claim_reserve ($1, $2, $3)
+          -- fixme: should this calculation be claim_??_expense?
+          - ((claim_cheque_loss ($1, $2, $3) + claim_cheque_expense ($1, $2, $3)
+             + claim_cheque_in_house ($1, $2, $3) + claim_cash_call($1, $2, $3))
+               - (claim_salvage ($1, $2, $3) + claim_subrogation ($1, $2, $3)))
+         END AS outstanding_reserve;
+ $function$
+
+ CREATE OR REPLACE FUNCTION public.claim_outstanding_reserve(headings text[], claim_id integer, end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone)
+  RETURNS numeric
+  LANGUAGE sql
+ AS $function$
+
+    SELECT SUM(claim_outstanding_reserve(heading, $2, $3))
+      FROM UNNEST($1) AS heading;
+   $function$
+
+ #+END_SRC
+
+ #+RESULTS:
+
+*** 'claim_open_reserve';
+ #+BEGIN_SRC sql :results code :exports none
+ select pg_get_functiondef(oid) AS " "
+ from pg_proc
+ where proname = 'claim_info_by_heading';
+ #+END_SRC
+
+ #+RESULTS:
+ #+BEGIN_SRC sql
+
+ CREATE OR REPLACE FUNCTION public.claim_info_by_heading(claim_id integer)
+  RETURNS SETOF claim_info_by_heading
+  LANGUAGE sql
+ AS $function$
+     SELECT claim_transaction_heading_name,
+    	    claim_outstanding_reserve(claim_transaction_heading_name, claim_id),
+    	    claim_paid(claim_transaction_heading_name, claim_id)
+    	 FROM claim_transaction_heading,claim
+	 WHERE claim_id = $1;
+ $function$
+
+ #+END_SRC
+
+*** check_positive_outstanding_reserve_transaction()
+
+ #+BEGIN_SRC sql :results code :exports none
+ select pg_get_functiondef(oid) AS " "
+ from pg_proc
+ where proname = 'check_positive_outstanding_reserve_transaction';
+ #+END_SRC
+
+ #+RESULTS:
+ #+begin_src sql
+
+ CREATE OR REPLACE FUNCTION public.check_positive_outstanding_reserve_transaction()
+  RETURNS trigger
+  LANGUAGE plpgsql
+ AS $function$
+ DECLARE
+   reserve numeric;
+   tr claim_transaction;
+ BEGIN
+   IF (TG_OP = 'DELETE') THEN
+    tr:= OLD;
+   ELSE
+    tr:= NEW;
+   END IF;
+    reserve := claim_outstanding_reserve
+                (tr.transaction_heading, tr.claim_id,
+                 tr.transaction_date::date + INTERVAL '1 Day' - Interval '1 Sec');
+
+    -- If the reserve is < 0, we'll see if it has been adjusted after
+    -- the transaction date and is positive now.
+   IF reserve >=0 THEN
+     RETURN tr;
+    ELSE
+     reserve := claim_outstanding_reserve (tr.transaction_heading, tr.claim_id);
+   END IF;
+
+   IF reserve >=0 THEN
+     RETURN tr;
+    ELSE
+     RAISE EXCEPTION 'Outstanding Reserve for #% % is $%
+   ... After trying to % % for $%', tr.claim_id,
+     tr.transaction_heading, reserve,
+     TG_OP,
+       (SELECT description FROM claim_transaction_type
+         WHERE claim_transaction_type_id = tr.transaction_type_id),
+      tr.amount;
+   END IF;
+ END;
+ $function$
+
+ #+end_src
+
+ #+RESULTS:
+ | CREATE FUNCTION |
+ |-----------------|
+
+** Claim Paid
+   :PROPERTIES:
+   :CUSTOM_ID: ClaimPaid
+   :END:
+
+ Transaction of the following types are ~Paid~ type transactions. When
+ calculating ~claim_paid~, the following occurs.
+
+  1) The Loss is is calculated as 'Cheque - Loss' minus the sum of
+     salvage, subrogation and recovered deductable.
+
+  2) 'Cheque - Expense' and 'Cash Call/Scheme Advance' are added onto
+     the Loss. This becomes the Paid.
+
+ 'Cheque - In House Payout's are not included as part of the Paid.
+
+ #+NAME: claim_transaction_paid_descriptions
+ #+BEGIN_SRC sql
+   'Cheque - Loss', 'Cheque - Expense',
+   -- 'Cheque - In House Payout',
+   'Cash Call/Scheme Advance'
+ #+END_SRC
+
+*** /function/ claim_transaction_is_paid(claim_transaction)        :noexport:
+
+ #+NAME: claim_transaction_is_paid
+ #+BEGIN_SRC sql :noweb yes
+ CREATE OR REPLACE FUNCTION claim_transaction_is_paid(claim_transaction)
+ RETURNS BOOLEAN AS $$
+ WITH ttype AS (
+  SELECT description , ARRAY[
+ <<claim_transaction_paid_descriptions>>] AS paid
+   FROM claim_transaction_type
+   WHERE claim_transaction_type_id = $1.transaction_type_id
+ )
+
+ SELECT (description = ANY (paid)) FROM ttype;
+ $$ LANGUAGE SQL;
+ #+END_SRC
+
+**** Example
+
+ #+BEGIN_SRC sql
+ SELECT * from claim_transaction AS ct
+  WHERE claim_transaction_is_paid(ct) AND claim_id = 12345
+  ORDER BY transaction_date LIMIT 1;
+
+ #+END_SRC
+
+ #+RESULTS:
+ | transaction_id | transaction_type_id | transaction_date    | claim_id | payee_id | cheque_number |  amount | schemes_advance_number | reference_number | expense_type | transaction_heading | approved |
+ |----------------+---------------------+---------------------+----------+----------+---------------+---------+------------------------+------------------+--------------+---------------------+----------|
+ |          50506 |                   3 | 2006-11-15 00:00:00 |    12345 |     9366 |          1784 | 1165.44 |                        |                  | Payment      | Indemnity           | f        |
+
+*** /function/ claim_paid(*)                                       :noexport:
+
+ #+BEGIN_SRC sql :results code
+ select pg_get_functiondef(oid) AS " "
+ from pg_proc
+ where proname = 'claim_paid';
+ #+END_SRC
+
+ #+RESULTS:
+ #+BEGIN_SRC sql
+
+ CREATE OR REPLACE FUNCTION public.claim_paid(claim_id integer, end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone, start_date timestamp without time zone DEFAULT '-infinity'::timestamp without time zone)
+  RETURNS numeric
+  LANGUAGE sql
+  STABLE
+ AS $function$
+  SELECT (claim_loss ($1, $2, $3) + claim_cheque_expense ($1, $2, $3) + claim_cash_call($1, $2, $3));
+
+
+ CREATE OR REPLACE FUNCTION public.claim_paid(heading text, claim_id integer, end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone, start_date timestamp without time zone DEFAULT '-infinity'::timestamp without time zone)
+  RETURNS numeric
+  LANGUAGE sql
+  STABLE
+ AS $function$
+  SELECT (claim_loss ($1, $2, $3, $4) + claim_cheque_expense ($1, $2, $3, $4)
+          + claim_cash_call($1, $2, $3, $4));
+ $function$
+
+ CREATE OR REPLACE FUNCTION public.claim_paid(headings text[], claim_id integer, end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone, start_date timestamp without time zone DEFAULT '-infinity'::timestamp without time zone)
+  RETURNS numeric
+  LANGUAGE sql
+ AS $function$
+
+  SELECT SUM(claim_paid(heading, $2, $3, $4))
+    FROM UNNEST($1) AS heading;
+ $function$
+
+ #+END_SRC
+
+** Indemnity
+   :PROPERTIES:
+   :CUSTOM_ID: Indemnity
+   :END:
+*** About
+    :PROPERTIES:
+    :CUSTOM_ID: IndemnityAbout
+    :ORDERED:  t
+    :END:
+
+ #+BEGIN_QUOTE
+ *in·dem·ni·ty*
+ /inˈdemnədē\/
+
+ /noun/
+  -  a sum of money paid as compensation, especially a sum exacted by a victor in war as one condition of peace.
+    synonyms:	compensation, reimbursement, recompense, repayment, restitution, payment, redress, reparation(s), damages
+ #+END_QUOTE
+
+ #+begin_src sql
+   ALTER TABLE claim_transaction_heading ADD COLUMN indemnity BOOLEAN NOT NULL DEFAULT false;
+ #+end_src
+ #+begin_src sql
+   UPDATE claim_transaction_heading SET indemnity = true WHERE claim_transaction_heading_name IN (SELECT * FROM claim_transaction_indemnity_heading);
+ #+end_src
+ 
+ #+RESULTS:
+ | UPDATE 39 |
+ |-----------|
+
+***  /Table/ ~claim_transaction_indemnity_heading~
+
+#+begin_src sql
+CREATE TABLE IF NOT EXISTS claim_transaction_indemnity_heading (
+  NAME TEXT PRIMARY KEY REFERENCES claim_transaction_heading(claim_transaction_heading_name)
+);
+INSERT INTO claim_transaction_indemnity_heading SELECT UNNEST(ARRAY[
+      'Crime', 'Contents', 'Building', 'Indemnity', 'Business Interruption',
+      'Additional Living Expense', 'Equipment', 'Stock', 'Additional Coverages',
+      'Loss of Rent', 'Tow', 'Storage', 'Medical/Rehabilitation',
+      'Property Damage', 'Bodily Injury', 'Tenants legal liability'
+      , 'Detached Building', 'Professional Fees', 'Electronic Data Processing Equipment'
+      , 'Collision', 'Theft', 'Vandalism', 'Direct Compensation', 'Glass - Windshield'
+      , 'Car Rental', 'Plate Glass', 'Extra Expense', 'Comprehensive', 'Improvements and Betterments'
+    ])
+
+ON CONFLICT DO NOTHING;
+
+
+INSERT INTO claim_transaction_indemnity_heading
+ VALUES ('Improvements and Betterments'), ('Faulty Workmanship'), ('Cargo'), ('Income Replacement'),
+ ('Debris Removal'), ('Tool Floater'), ('Rental'), ('Loss Assessment'), ('Lock & Key')
+ ON CONFLICT DO NOTHING;
+#+end_src
+
+#+RESULTS:
+| CREATE TABLE |
+|--------------|
+| INSERT 0 0   |
+
+ Our Indemnity headings are as follows.
+
+ #+name: claim_transaction_indemnity_headings
+ #+BEGIN_SRC sql
+  CREATE OR REPLACE FUNCTION claim_transaction_indemnity_headings ()
+   RETURNS TEXT[] STABLE LANGUAGE SQL AS $$
+    SELECT ARRAY_AGG(claim_transaction_heading_name) FROM claim_transaction_heading WHERE indemnity;
+  $$;
+ #+END_SRC
+
+ #+RESULTS: claim_transaction_indemnity_headings
+ | CREATE FUNCTION |
+ |-----------------|
+
+ #+BEGIN_SRC sql
+
+--SELECT * from claim_transaction_indemnity_heading;
+ SELECT UNNEST(claim_transaction_indemnity_headings());
+
+ #+END_SRC
+
+ #+RESULTS:
+ | unnest                               |
+ |--------------------------------------|
+ | Contents                             |
+ | Building                             |
+ | Indemnity                            |
+ | Crime                                |
+ | Additional Living Expense            |
+ | Equipment                            |
+ | Stock                                |
+ | Additional Coverages                 |
+ | Medical/Rehabilitation               |
+ | Income Replacement                   |
+ | Loss of Rent                         |
+ | Tow                                  |
+ | Storage                              |
+ | Business Interruption                |
+ | Property Damage                      |
+ | Bodily Injury                        |
+ | Tenants legal liability              |
+ | Detached Building                    |
+ | Professional Fees                    |
+ | Plate Glass                          |
+ | Collision                            |
+ | Theft                                |
+ | Vandalism                            |
+ | Direct Compensation                  |
+ | Glass - Windshield                   |
+ | Electronic Data Processing Equipment |
+ | Car Rental                           |
+ | Extra Expense                        |
+ | Improvements and Betterments         |
+ | Comprehensive                        |
+ | Faulty Workmanship                   |
+ | Cargo                                |
+ | Debris Removal                       |
+ | Tool Floater                         |
+ | Rental                               |
+ | Loss Assessment                      |
+ | Lock & Key                           |
+ | Livestock                            |
+ | Builders Risk                        |
+
+
+***  /Function/ ~claim_indemnity_reserve_variance~
+
+#+begin_src sql
+  CREATE OR REPLACE FUNCTION claim_indemnity_reserve_variance(claim_id INTEGER)
+  RETURNS INTEGER STABLE LANGUAGE SQL AS $$
+   SELECT CASE WHEN first_reserve > 0
+                THEN round(((first_reserve - final_reserve) / first_reserve) * 100)::int
+               ELSE 0 END
+   FROM
+   (SELECT claim_indemnity_open_reserve($1) AS first_reserve
+    , claim_indemnity_reserve($1) AS final_reserve) AS ires ;
+  $$;
+#+end_src
+
+#+RESULTS:
+| CREATE FUNCTION |
+|-----------------|
+
+*** Reserve for Indemnity
+    :PROPERTIES:
+    :CUSTOM_ID: IndemnityReserve
+    :END:
+
+
+
+ We have both the open/outstanding reserve for the 'Indemnity' heading
+ and the open/outstanding reserve for all "Indemnity headings".
+
+#+begin_src sql
+-- NOT YET LIVE DREWC
+CREATE OR REPLACE VIEW claim_indemnity_reserve AS
+ SELECT cr.* FROM claim_transaction_indemnity_heading
+   AS h LEFT JOIN claim_reserve AS cr ON (name = heading) ;
+#+end_src
+
+#+begin_src sql
+  SELECT * FROM claim_indemnity_reserve LIMIT 5;
+#+end_src
+#+RESULTS:
+| claim_id | type               | heading   | date                |    amount |
+|----------+--------------------+-----------+---------------------+-----------|
+|    32582 | Reserve Adjustment | Indemnity | 2019-11-25 07:28:19 | -59220.36 |
+|    51888 | Reserve Adjustment | Stock     | 2019-11-25 11:00:11 |  -2502.46 |
+|    47771 | Reserve Adjustment | Building  | 2019-11-25 11:19:47 |  -2033.22 |
+|    52832 | Reserve Adjustment | Building  | 2019-11-25 09:53:29 | -10666.56 |
+|    56769 | Open Reserve       | Contents  | 2019-11-25 09:58:38 |  21000.00 |
+
+**** /function/ claim_indemnity_reserve(claim)                     :noexport:
+
+ #+NAME: claim_indemnity_reserve
+ #+BEGIN_SRC sql :noweb yes
+   CREATE OR REPLACE FUNCTION claim_indemnity_reserve
+   (claim_id integer,
+    end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone
+   )
+    -- note this has no start_date because there is no sensible per-period calculation for the reserve
+    RETURNS numeric(20,2) AS $$
+   SELECT SUM (amount) FROM claim_indemnity_reserve AS ir
+    WHERE ir.claim_id = $1
+    AND ir.date < $2;
+   $$ LANGUAGE SQL;
+ #+END_SRC
+
+ #+RESULTS: claim_indemnity_reserve
+ | CREATE FUNCTION |
+ |-----------------|
+
+ #+BEGIN_SRC sql
+ SELECT claim_indemnity_reserve(1234);
+ #+END_SRC
+
+ #+RESULTS:
+ | claim_indemnity_reserve |
+ |-------------------------|
+ |                22158.00 |
+
+ #+BEGIN_SRC sql :results code :exports none
+ select pg_get_functiondef(oid) AS " "
+ from pg_proc
+ where proname = 'claim_indemnity_open_reserve';
+ #+END_SRC
+
+ #+RESULTS:
+ #+begin_src sql
+
+ CREATE OR REPLACE FUNCTION public.claim_indemnity_open_reserve(claim_id integer, end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone, start_date timestamp without time zone DEFAULT '-infinity'::timestamp without time zone)
+  RETURNS numeric
+  LANGUAGE sql
+  STABLE
+ AS $function$
+  SELECT SUM (claim_open_reserve(heading, $1, $2, $3))
+   FROM UNNEST(claim_transaction_indemnity_headings()) AS heading ;
+
+  $function$
+
+ #+end_src
+
+**** /function/ claim_indemnity_open_reserve(claim)                :noexport:
+
+ #+BEGIN_SRC sql :noweb yes
+ CREATE OR REPLACE FUNCTION claim_indemnity_open_reserve
+ (claim_id integer, end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone,
+                    start_date timestamp without time zone DEFAULT '-infinity'::timestamp without time zone)
+  RETURNS numeric(20,2) AS $$
+ SELECT SUM (claim_open_reserve(heading, $1, $2, $3))
+  FROM UNNEST(claim_transaction_indemnity_headings()) AS heading ;
+
+ $$ STABLE LANGUAGE SQL;
+ #+END_SRC
+
+ #+RESULTS:
+ | CREATE FUNCTION |
+ |-----------------|
+
+ #+BEGIN_SRC sql :results code :exports none
+ select pg_get_functiondef(oid) AS " "
+ from pg_proc
+ where proname = 'claim_indemnity_open_reserve';
+ #+END_SRC
+**** /function/ claim_indemnity_outstanding_reserve(claim,end,start) :noexport:
+
+ #+BEGIN_SRC sql :noweb yes
+ CREATE OR REPLACE FUNCTION claim_indemnity_outstanding_reserve
+ (claim_id integer
+   ,end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone
+ )
+  RETURNS numeric(20,2) AS $$
+   SELECT claim_outstanding_reserve(claim_transaction_indemnity_headings(), $1, $2)
+ $$ LANGUAGE SQL;
+ #+END_SRC
+
+ #+RESULTS:
+ | CREATE FUNCTION |
+ |-----------------|
+
+ #+BEGIN_SRC sql :results code :exports none
+ select pg_get_functiondef(oid) AS " "
+ from pg_proc
+ where proname = 'claim_indemnity_open_reserve';
+ #+END_SRC
+
+
+*** Paid for Indemnity
+    :PROPERTIES:
+    :CUSTOM_ID: IndemnityPaid
+    :END:
+
+**** /function/ claim_indemnity_paid(claim_id)                     :noexport:
+
+ #+NAME: claim_indemnity_paid
+ #+BEGIN_SRC sql :noweb yes
+ CREATE OR REPLACE FUNCTION claim_indemnity_paid
+ (claim_id integer, end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone,
+                    start_date timestamp without time zone DEFAULT '-infinity'::timestamp without time zone)
+  RETURNS numeric(20,2) AS $$
+ SELECT SUM (claim_paid(heading, $1, $2, $3))
+  FROM UNNEST(claim_transaction_indemnity_headings()) AS heading ;
+
+ $$ LANGUAGE SQL;
+ #+END_SRC
+
+ #+RESULTS: claim_indemnity_paid
+ | CREATE FUNCTION |
+ |-----------------|
+
+ #+RESULTS:
+ | CREATE FUNCTION |
+ |-----------------|
+
+
+*** /function/ claim_transaction_is_indemnity(claim-transaction)   :noexport:
+
+
+ #+NAME: claim_transaction_is_indemnity
+ #+BEGIN_SRC sql :noweb yes
+ CREATE OR REPLACE FUNCTION claim_transaction_is_indemnity (claim_transaction)
+  RETURNS BOOLEAN AS $$
+ SELECT ($1.transaction_heading = ANY (claim_transaction_indemnity_headings())) ;
+ $$ LANGUAGE SQL;
+ #+END_SRC
+
+ #+RESULTS: claim_transaction_is_indemnity
+ | CREATE FUNCTION |
+ |-----------------|
+
+** Fees
+
+ #+BEGIN_SRC sql
+  CREATE OR REPLACE FUNCTION claim_transaction_fee_headings ()
+   RETURNS TEXT[] STABLE LANGUAGE SQL AS $$
+    SELECT ARRAY['Expert Expense', 'Legal', 'Adjusting', 'TPA'];
+  $$;
+ #+END_SRC
+** Claim Loss
+
+ #+BEGIN_SRC sql :results code :exports none
+ select pg_get_functiondef(oid)
+ from pg_proc
+ where proname = 'claim_loss';
+ #+END_SRC
+
+ #+RESULTS:
+ #+BEGIN_SRC sql
+ pg_get_functiondef
+ CREATE OR REPLACE FUNCTION public.claim_loss(claim_id integer, end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone, start_date timestamp without time zone DEFAULT '-infinity'::timestamp without time zone)
+  RETURNS numeric
+  LANGUAGE sql
+  STABLE
+ AS $function$
+ SELECT (claim_cheque_loss ($1, $2, $3)
+        - (claim_salvage ($1, $2, $3) + claim_subrogation ($1, $2, $3) + claim_recovered_deductible($1, $2, $3)));
+ $function$
+
+ CREATE OR REPLACE FUNCTION public.claim_loss(heading text, claim_id integer, end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone, start_date timestamp without time zone DEFAULT '-infinity'::timestamp without time zone)
+  RETURNS numeric
+  LANGUAGE sql
+  STABLE
+ AS $function$
+ SELECT (claim_cheque_loss ($1, $2, $3, $4)
+        - (claim_salvage ($1, $2, $3, $4) + claim_subrogation ($1, $2, $3, $4) + claim_recovered_deductible($1, $2, $3, $4)));
+ $function$
+
+ #+END_SRC
+
+*** Claim Cheque Loss
+
+  #+BEGIN_SRC sql :results code :exports none
+    select pg_get_functiondef(oid)
+    from pg_proc
+    where proname = 'claim_cheque_loss';
+  #+END_SRC
+
+  #+RESULTS:
+  #+BEGIN_SRC sql
+  pg_get_functiondef
+  CREATE OR REPLACE FUNCTION public.claim_cheque_loss(claim_id integer, end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone, start_date timestamp without time zone DEFAULT '-infinity'::timestamp without time zone)
+   RETURNS numeric
+   LANGUAGE sql
+   STABLE
+  AS $function$
+	 SELECT claim_transaction_info(3, $1, $2, $3);
+  $function$
+
+  CREATE OR REPLACE FUNCTION public.claim_cheque_loss(heading text, claim_id integer, end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone, start_date timestamp without time zone DEFAULT '-infinity'::timestamp without time zone)
+   RETURNS numeric
+   LANGUAGE sql
+   STABLE
+  AS $function$
+	 SELECT claim_transaction_info(3, $1, $2, $3, $4);
+  $function$
+
+  #+END_SRC
+
+
+** Claim Transaction Info
+
+ #+BEGIN_SRC sql :results code :exports none
+ select pg_get_functiondef(oid) AS " "
+ from pg_proc
+ where proname = 'claim_transaction_info';
+ #+END_SRC
+
+ #+RESULTS:
+ #+BEGIN_SRC sql
+
+ CREATE OR REPLACE FUNCTION public.claim_transaction_info(transaction_type_id integer, claim_id integer, end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone, start_date timestamp without time zone DEFAULT '-infinity'::timestamp without time zone)
+  RETURNS numeric
+  LANGUAGE sql
+  STABLE
+ AS $function$;
+  SELECT coalesce(sum(amount), 0) FROM claim_transaction
+   WHERE claim_id = $2
+         AND transaction_type_id = $1
+ 	 AND transaction_date <= $3
+	 AND transaction_date >= $4
+ $function$
+
+ CREATE OR REPLACE FUNCTION public.claim_transaction_info(transaction_type_id integer, heading text, claim_id integer, end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone, start_date timestamp without time zone DEFAULT '-infinity'::timestamp without time zone)
+  RETURNS numeric
+  LANGUAGE sql
+  STABLE
+ AS $function$;
+ SELECT coalesce(sum(amount), 0) FROM claim_transaction
+   WHERE claim_id = $3
+         AND transaction_type_id = $1
+	 AND transaction_heading = $2
+ 	 AND transaction_date <= $4
+	 AND transaction_date >= $5;
+
+ $function$
+
+ #+END_SRC
+
+** Claim Expense
+
+  #+BEGIN_SRC sql :results code :exports none
+  select pg_get_functiondef(oid)
+  from pg_proc
+  where proname = 'claim_cheque_expense';
+  #+END_SRC
+
+  #+RESULTS:
+  #+begin_src sql
+  pg_get_functiondef
+  CREATE OR REPLACE FUNCTION public.claim_cheque_expense(claim_id integer, end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone, start_date timestamp without time zone DEFAULT '-infinity'::timestamp without time zone)
+   RETURNS numeric
+   LANGUAGE sql
+   STABLE
+  AS $function$
+         SELECT claim_transaction_info(4, $1, $2, $3);
+  $function$
+
+  CREATE OR REPLACE FUNCTION public.claim_cheque_expense(heading text, claim_id integer, end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone, start_date timestamp without time zone DEFAULT '-infinity'::timestamp without time zone)
+   RETURNS numeric
+   LANGUAGE sql
+   STABLE
+  AS $function$
+         SELECT claim_transaction_info(4, $1, $2, $3, $4);
+  $function$
+
+  #+end_src
+
+** Incurred
+
+ #+BEGIN_SRC sql
+ CREATE OR REPLACE FUNCTION public.claim_incurred(claim_id integer, end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone)
+  RETURNS numeric
+  LANGUAGE sql
+  STABLE
+ AS $function$
+  SELECT
+  claim_outstanding_reserve ($1, $2)
+  +
+   ((claim_cheque_loss ($1, $2)
+     + claim_cheque_expense ($1, $2)
+     + claim_cash_call($1, $2))
+   - claim_salvage($1, $2)
+     - claim_subrogation($1, $2)
+     - claim_recovered_deductible($1, $2));
+ $function$;
+
+ CREATE OR REPLACE FUNCTION public.claim_incurred(heading text, claim_id integer, end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone)
+  RETURNS numeric
+  LANGUAGE sql
+  STABLE
+ AS $function$
+  SELECT (claim_cheque_loss ($1, $2, $3) + claim_cheque_expense ($1, $2, $3) +   claim_cash_call ($1, $2, $3) + claim_outstanding_reserve ($1, $2, $3))
+    - (claim_salvage($1, $2, $3)
+     + claim_subrogation($1, $2, $3)
+     + claim_recovered_deductible($1, $2, $3));
+ $function$
+
+ #+END_SRC
+
+ #+RESULTS:
+ | CREATE FUNCTION |
+ |-----------------|
+ | CREATE FUNCTION |
+
+** Report : TPA FEES
+
+
+
+
+ #+begin_src sql :tangle /tmp/closed-tpa.sql
+ SELECT contract_number, claim_id, status, sum(amount) AS tpa
+   FROM claim_transaction JOIN claim USING (claim_id) JOIN risk USING (risk_id)
+   JOIN contract USING (contract_id)
+   WHERE contract_id IN (2837, 3040)
+   AND transaction_type_id = 4 AND transaction_heading = 'TPA'
+   AND status = 'Closed'
+
+
+ GROUP BY claim_id, contract_number, status ORDER BY contract_number;
+ #+end_src
+
+ #+RESULTS:
+ | contract_number | claim_id | status |    tpa |
+ |-----------------+----------+--------+--------|
+ | B0429BA1701235  |    42604 | Closed | 280.00 |
+ | B0429BA1701235  |    42747 | Closed | 280.00 |
+ | B0429BA1701235  |    42836 | Closed | 280.00 |
+ | B0429BA1701235  |    43333 | Closed | 280.00 |
+ | B0429BA1701235  |    43609 | Closed | 280.00 |
+ | B0429BA1701235  |    43815 | Closed | 280.00 |
+ | B0429BA1701235  |    43929 | Closed | 280.00 |
+ | B0429BA1701235  |    43936 | Closed | 280.00 |
+ | B0429BA1701235  |    44015 | Closed | 280.00 |
+ | B0429BA1701235  |    44218 | Closed | 280.00 |
+
+
+** /File/ ~limit-of-cover-migration.sql~                           :noexport:
+
+ #+BEGIN_SRC sql :noweb yes :tangle ../sql/limit-of-cover-migration.sql
+<<limit-of-cover-migration>>
+ #+END_SRC
+** File :: claim_transaction.sql                                   :noexport:
+
+ #+BEGIN_SRC sql :noweb yes :tangle ../sql/claim-transaction.sql
+
+ -- Indemnity
+ <<claim_transaction_indemnity_headings>>
+
+ <<claim_transaction_is_indemnity>>
+
+ <<claim_indemnity_reserve>>
+
+ <<claim_indemnity_open_reserve>>
+
+ <<claim_indemnity_paid>>
+
+ <<claim_transaction_is_payed>>
+
+ <<claim_transaction_is_paid>>
+ #+END_SRC
+** Describe
+ #+BEGIN_SRC sql
+ \d claim_transaction_type
+ #+END_SRC
+
+ #+RESULTS:
+ | Table "public.claim_transaction_type"                                                                                                                                           |         |                                                                                            |
+ |---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+---------+--------------------------------------------------------------------------------------------|
+ | Column                                                                                                                                                                          | Type    | Modifiers                                                                                  |
+ | claim_transaction_type_id                                                                                                                                                       | integer | not null default nextval('claim_transaction_type_claim_transaction_type_id_seq'::regclass) |
+ | description                                                                                                                                                                     | text    | not null                                                                                   |
+ | Indexes:                                                                                                                                                                        |         |                                                                                            |
+ | "claim_transaction_type_pkey" PRIMARY KEY, btree (claim_transaction_type_id)                                                                                                    |         |                                                                                            |
+ | "claim_transaction_type_description_key" UNIQUE CONSTRAINT, btree (description)                                                                                                 |         |                                                                                            |
+ | Referenced by:                                                                                                                                                                  |         |                                                                                            |
+ | TABLE "claim_transaction" CONSTRAINT "claimtransaction_transaction_type_id_fkey" FOREIGN KEY (transaction_type_id) REFERENCES claim_transaction_type(claim_transaction_type_id) |         |                                                                                            |
+ | Triggers:                                                                                                                                                                       |         |                                                                                            |
+ | hstore_row_history AFTER INSERT OR DELETE OR UPDATE ON claim_transaction_type FOR EACH ROW EXECUTE PROCEDURE hstore_row_history()                                               |         |                                                                                            |

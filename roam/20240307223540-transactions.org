@@ -1,0 +1,218 @@
+:PROPERTIES:
+:ID:       de30a70d-a795-48ee-92f7-936426ddf690
+:END:
+#+title: Transactions
+#+PROPERTY: header-args:sql :engine postgresql :cmdline "--host db.ecm.lan --username=maxclaims"
+
+We could really use some indexes here.
+
+The Bordereau is everything.
+
+    To start, we get the last 100 claims that had transactions
+    
+#+begin_src sql
+      CREATE TEMPORARY TABLE _tran_claims AS SELECT DISTINCT claim_id
+    FROM (SELECT * FROM claim_transaction
+              ORDER BY transaction_date DESC) t LIMIT 100;
+
+    EXPLAIN ANALYZE
+    SELECT *, now()::date - INTERVAL '1 month' AS "start", now()::date AS date FROM _tran_claims
+#+end_src
+
+| SELECT 100                                                                                                  |
+|-------------------------------------------------------------------------------------------------------------|
+| QUERY PLAN                                                                                                  |
+| Seq Scan on _tran_claims  (cost=0.00..67.38 rows=2550 width=16) (actual time=0.020..0.075 rows=100 loops=1) |
+| Planning Time: 0.086 ms                                                                                     |
+| Execution Time: 0.097 ms                                                                                    |
+
+Now, paid this month and up until this month.
+
+#+begin_src sql
+    CREATE TEMPORARY TABLE _tran_claims AS SELECT DISTINCT claim_id
+  FROM (SELECT * FROM claim_transaction
+            ORDER BY transaction_date DESC) t LIMIT 100;
+
+   EXPLAIN ANALYZE
+    SELECT claim_paid(claim_id, "start") AS prev, claim_paid(claim_id, "end", "start")
+    FROM 
+         (SELECT *, now()::date - INTERVAL '1 month' AS "start", now()::date AS "end" FROM _tran_claims) meta
+#+end_src
+
+#+RESULTS:
+| SELECT 100                                                                                                     |
+|----------------------------------------------------------------------------------------------------------------|
+| QUERY PLAN                                                                                                     |
+| Seq Scan on _tran_claims  (cost=0.00..8093.50 rows=2550 width=64) (actual time=2.080..19.158 rows=100 loops=1) |
+| Planning Time: 0.712 ms                                                                                        |
+| Execution Time: 19.191 ms                                                                                      |
+
+
+Well that doesn't help at all. I want to know WHAT claim_paid does.
+
+
+
+That gives me what I really want. Type id is 3 for loss.
+
+#+begin_src sql
+    SELECT coalesce(sum(amount), 0) FROM claim_transaction
+    WHERE claim_id = $2
+	  AND transaction_type_id = $1
+	  AND transaction_date <= $3
+	  AND transaction_date >= $4
+  
+#+end_src
+
+#+begin_src sql
+    CREATE TEMPORARY TABLE _tran_claims AS SELECT DISTINCT claim_id
+  FROM (SELECT * FROM claim_transaction
+            ORDER BY transaction_date DESC) t LIMIT 1000;
+
+ EXPLAIN ANALYZE
+   --  SELECT claim_paid(claim_id, "start") AS prev, claim_paid(claim_id, "end", "start")
+  SELECT (SELECT coalesce(sum(amount), 0) FROM claim_transaction ct
+    WHERE ct.claim_id = meta.claim_id
+  	  AND transaction_type_id = 3
+  	  AND transaction_date <= meta.start
+  	  AND transaction_date >= '1900-01-01'::date),
+   (SELECT coalesce(sum(amount), 0) FROM claim_transaction ct
+    WHERE ct.claim_id = meta.claim_id
+  	  AND transaction_type_id = 3
+  	  AND transaction_date <= meta.end
+  	  AND transaction_date >= meta.start)
+
+    FROM 
+         (SELECT *, now()::date - INTERVAL '1 month' AS "start", now()::date AS "end" FROM _tran_claims) meta
+#+end_src
+  
+  #+RESULTS:
+  | SELECT 1000                                                                                                                                            |
+  |--------------------------------------------------------------------------------------------------------------------------------------------------------|
+  | QUERY PLAN                                                                                                                                             |
+  | Seq Scan on _tran_claims  (cost=0.00..52682.91 rows=2550 width=64) (actual time=0.117..23.529 rows=1000 loops=1)                                       |
+  | SubPlan 1                                                                                                                                              |
+  | ->  Aggregate  (cost=12.16..12.17 rows=1 width=32) (actual time=0.012..0.012 rows=1 loops=1000)                                                        |
+  | ->  Index Scan using idex_1 on claim_transaction ct  (cost=0.42..12.15 rows=2 width=6) (actual time=0.007..0.010 rows=2 loops=1000)                    |
+  | Index Cond: ((transaction_type_id = 3) AND (claim_id = _tran_claims.claim_id))                                                                         |
+  | Filter: ((transaction_date >= '1900-01-01'::date) AND (transaction_date <= ((now())::date - '1 mon'::interval)))                                       |
+  | Rows Removed by Filter: 0                                                                                                                              |
+  | SubPlan 2                                                                                                                                              |
+  | ->  Aggregate  (cost=8.47..8.48 rows=1 width=32) (actual time=0.008..0.008 rows=1 loops=1000)                                                          |
+  | ->  Index Scan using claim_id_date on claim_transaction ct_1  (cost=0.44..8.46 rows=1 width=6) (actual time=0.006..0.007 rows=0 loops=1000)            |
+  | Index Cond: ((claim_id = _tran_claims.claim_id) AND (transaction_date <= (now())::date) AND (transaction_date >= ((now())::date - '1 mon'::interval))) |
+  | Filter: (transaction_type_id = 3)                                                                                                                      |
+  | Rows Removed by Filter: 0                                                                                                                              |
+  | Planning Time: 1.129 ms                                                                                                                                |
+  | Execution Time: 23.815 ms                                                                                                                              |
+
+#+begin_src sql :engine postgresql :cmdline "--host=db.ecm.lan --username=maxclaims"
+    SELECT claim_id, open_date FROM claim ORDER BY claim_id DESC LIMIT 4;
+#+end_src
+
+  #+BEGIN_SRC sql :results code :exports none
+          select pg_get_functiondef(oid)||';' AS " "
+          from pg_proc
+          where proname = 'claim_paid'
+    OR proname = 'claim_cheque_expense'
+    OR proname = 'claim_reserve'
+    OR proname = 'claim_recovered_deductible'
+    OR proname = 'claim_salvage';
+  #+END_SRC
+
+  #+RESULTS:
+  #+begin_src sql
+
+  CREATE OR REPLACE FUNCTION public.claim_reserve(claim_id integer, end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone)
+   RETURNS numeric
+   LANGUAGE sql
+   STABLE
+  AS $function$
+   -- note this has no start_date because there is no sensible per-period calculation for the reserve
+   SELECT (claim_open_reserve ($1, $2) + claim_reserve_adjustment ($1, $2));
+  $function$
+  ;
+  CREATE OR REPLACE FUNCTION public.claim_cheque_expense(claim_id integer, end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone, start_date timestamp without time zone DEFAULT '-infinity'::timestamp without time zone)
+   RETURNS numeric
+   LANGUAGE sql
+   STABLE
+  AS $function$
+	 SELECT claim_transaction_info(4, $1, $2, $3);
+  $function$
+  ;
+  CREATE OR REPLACE FUNCTION public.claim_cheque_expense(heading text, claim_id integer, end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone, start_date timestamp without time zone DEFAULT '-infinity'::timestamp without time zone)
+   RETURNS numeric
+   LANGUAGE sql
+   STABLE
+  AS $function$
+	 SELECT claim_transaction_info(4, $1, $2, $3, $4);
+  $function$
+  ;
+  CREATE OR REPLACE FUNCTION public.claim_paid(claim_id integer, end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone, start_date timestamp without time zone DEFAULT '-infinity'::timestamp without time zone)
+   RETURNS numeric
+   LANGUAGE sql
+   STABLE
+  AS $function$
+   SELECT (claim_loss ($1, $2, $3) + claim_cheque_expense ($1, $2, $3) + claim_cash_call($1, $2, $3));
+  $function$
+  ;
+  CREATE OR REPLACE FUNCTION public.claim_paid(headings text[], claim_id integer, end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone, start_date timestamp without time zone DEFAULT '-infinity'::timestamp without time zone)
+   RETURNS numeric
+   LANGUAGE sql
+   STABLE
+  AS $function$
+
+   SELECT SUM(claim_paid(heading, $2, $3, $4))
+     FROM UNNEST($1) AS heading;
+  $function$
+  ;
+  CREATE OR REPLACE FUNCTION public.claim_paid(heading text, claim_id integer, end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone, start_date timestamp without time zone DEFAULT '-infinity'::timestamp without time zone)
+   RETURNS numeric
+   LANGUAGE sql
+   STABLE
+  AS $function$
+   SELECT (claim_loss ($1, $2, $3, $4) + claim_cheque_expense ($1, $2, $3, $4)
+	   + claim_cash_call($1, $2, $3, $4));
+  $function$
+  ;
+  CREATE OR REPLACE FUNCTION public.claim_recovered_deductible(claim_id integer, end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone, start_date timestamp without time zone DEFAULT '-infinity'::timestamp without time zone)
+   RETURNS numeric
+   LANGUAGE sql
+   STABLE
+  AS $function$
+	 SELECT claim_transaction_info(8, $1, $2, $3);
+  $function$
+  ;
+  CREATE OR REPLACE FUNCTION public.claim_recovered_deductible(heading text, claim_id integer, end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone, start_date timestamp without time zone DEFAULT '-infinity'::timestamp without time zone)
+   RETURNS numeric
+   LANGUAGE sql
+   STABLE
+  AS $function$
+	 SELECT claim_transaction_info(8, $1, $2, $3, $4);
+  $function$
+  ;
+  CREATE OR REPLACE FUNCTION public.claim_reserve(heading text, claim_id integer, end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone)
+   RETURNS numeric
+   LANGUAGE sql
+   STABLE
+  AS $function$
+   -- note this has no start_date because there is no sensible per-period calculation for the reserve
+   SELECT (claim_open_reserve ($1, $2, $3) + claim_reserve_adjustment ($1, $2, $3));
+  $function$
+  ;
+  CREATE OR REPLACE FUNCTION public.claim_salvage(claim_id integer, end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone, start_date timestamp without time zone DEFAULT '-infinity'::timestamp without time zone)
+   RETURNS numeric
+   LANGUAGE sql
+   STABLE
+  AS $function$
+	 SELECT claim_transaction_info(7, $1, $2, $3);
+  $function$
+  ;
+  CREATE OR REPLACE FUNCTION public.claim_salvage(heading text, claim_id integer, end_date timestamp without time zone DEFAULT 'infinity'::timestamp without time zone, start_date timestamp without time zone DEFAULT '-infinity'::timestamp without time zone)
+   RETURNS numeric
+   LANGUAGE sql
+   STABLE
+  AS $function$
+	 SELECT claim_transaction_info(7, $1, $2, $3, $4);
+  $function$
+  ;
+  #+end_src
